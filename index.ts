@@ -3,13 +3,21 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import OpenAI from 'openai';
+import { TwitterApi } from '@virtuals-protocol/game-twitter-node';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!
 });
 
+const twitterClient = new TwitterApi({
+  appKey: process.env.TWITTER_API_KEY!,
+  appSecret: process.env.TWITTER_API_SECRET!,
+  accessToken: process.env.TWITTER_ACCESS_TOKEN!,
+  accessSecret: process.env.TWITTER_ACCESS_SECRET!,
+});
+
 // Configuration
-const POSTS_PER_DAY = 96;
+const POSTS_PER_DAY = 5;
 const POST_INTERVAL = (24 * 60 * 60 * 1000) / POSTS_PER_DAY;
 const POSTS_PER_CYCLE = 5;
 const IMAGES_PER_CYCLE = 1;
@@ -93,7 +101,6 @@ function getNextWisdomTopic(): string {
 }
 
 function shouldPostWithImage(): boolean {
-  // Reset cycle if needed
   if (postsInCurrentCycle >= POSTS_PER_CYCLE) {
     postsInCurrentCycle = 0;
     imagesInCurrentCycle = 0;
@@ -101,7 +108,6 @@ function shouldPostWithImage(): boolean {
     saveState();
   }
   
-  // Calculate if we should use image
   let useImage = false;
   if (imagesInCurrentCycle < IMAGES_PER_CYCLE) {
     const postsRemaining = POSTS_PER_CYCLE - postsInCurrentCycle;
@@ -135,30 +141,18 @@ async function postTextOnly(): Promise<boolean> {
       return false;
     }
     
-    const twitterWorker = wisdom_agent.workers.find(w => w.id === "wisdom_twitter_worker");
-    if (!twitterWorker) {
-      console.log("❌ Twitter worker not found");
-      return false;
-    }
+    // Direct Twitter API call
+    const result = await twitterClient.v2.tweet(tweetText);
+    console.log("✅ Tweet posted! ID:", result.data.id);
     
-    const postResult = await twitterWorker.functions
-      .find(f => f.name === 'post_tweet')
-      ?.executable({ text: tweetText }, (msg: string) => console.log(`[Twitter] ${msg}`));
-    
-    if (postResult?.status === 'done') {
-      console.log("✅ Text post successful!");
-      lastPostTime = Date.now();
-      totalPosts++;
-      textPosts++;
-      postsInCurrentCycle++;
-      saveState();
-      return true;
-    } else {
-      console.log("❌ Failed to post - Status:", postResult?.status);
-      return false;
-    }
+    lastPostTime = Date.now();
+    totalPosts++;
+    textPosts++;
+    postsInCurrentCycle++;
+    saveState();
+    return true;
   } catch (error: any) {
-    console.error("❌ Text post error:", error.message);
+    console.error("❌ Twitter API error:", error);
     return false;
   }
 }
@@ -234,7 +228,7 @@ async function postWithImage(): Promise<boolean> {
     const imageUrl = urlResult.feedback;
     console.log("Image URL:", imageUrl);
     
-    // Post with image
+    // Post with image using media worker
     const mediaWorker = wisdom_agent.workers.find(w => w.id === "twitter_media_worker");
     if (!mediaWorker) {
       console.log("❌ Media worker not found");
@@ -283,7 +277,6 @@ async function attemptPost(): Promise<void> {
     console.log(`🎨 Posting WITH image (${imagesInCurrentCycle + 1}/${IMAGES_PER_CYCLE} in cycle)`);
     success = await postWithImage();
     
-    // Fallback to text if image fails
     if (!success) {
       console.log("⚠️ Image post failed, trying text-only...");
       success = await postTextOnly();
@@ -365,7 +358,6 @@ Timing:
   response.end('Not found');
 });
 
-// Main scheduler
 async function runScheduler(): Promise<void> {
   try {
     await attemptPost();
@@ -373,7 +365,6 @@ async function runScheduler(): Promise<void> {
     console.error("❌ Scheduler error:", error);
   }
   
-  // Check every 5 minutes
   setTimeout(runScheduler, 5 * 60 * 1000);
 }
 
@@ -388,16 +379,12 @@ async function main(): Promise<void> {
   console.log("- API_KEY:", !!process.env.API_KEY ? "✅" : "❌");
   console.log("- OPENAI_API_KEY:", !!process.env.OPENAI_API_KEY ? "✅" : "❌");
   console.log("- TWITTER_API_KEY:", !!process.env.TWITTER_API_KEY ? "✅" : "❌");
+  console.log("- TWITTER_API_SECRET:", !!process.env.TWITTER_API_SECRET ? "✅" : "❌");
+  console.log("- TWITTER_ACCESS_TOKEN:", !!process.env.TWITTER_ACCESS_TOKEN ? "✅" : "❌");
+  console.log("- TWITTER_ACCESS_SECRET:", !!process.env.TWITTER_ACCESS_SECRET ? "✅" : "❌");
   console.log("- TOGETHER_API_KEY:", !!process.env.TOGETHER_API_KEY ? "✅" : "❌");
-  console.log(`\n📊 Config: ${POSTS_PER_DAY} posts/day (every ${POST_INTERVAL / 60000} minutes)`);
+  console.log(`\n📊 Config: ${POSTS_PER_DAY} posts/day (every ${(POST_INTERVAL / 60000).toFixed(1)} minutes)`);
   console.log(`📊 Cycle: ${IMAGES_PER_CYCLE} image per ${POSTS_PER_CYCLE} posts\n`);
-  
-  console.log("Twitter creds check:", {
-  key: !!process.env.TWITTER_API_KEY,
-  secret: !!process.env.TWITTER_API_SECRET,
-  token: !!process.env.TWITTER_ACCESS_TOKEN,
-  tokenSecret: !!process.env.TWITTER_ACCESS_SECRET
-});
   
   try {
     console.log("Initializing agent...");
