@@ -17,7 +17,7 @@ const twitterClient = new TwitterApi({
 });
 
 // Configuration
-const POSTS_PER_DAY = 75;
+const POSTS_PER_DAY = 5;
 const POST_INTERVAL = (24 * 60 * 60 * 1000) / POSTS_PER_DAY;
 const POSTS_PER_CYCLE = 5;
 const IMAGES_PER_CYCLE = 1;
@@ -79,7 +79,7 @@ function loadState() {
 }
 
 const WISDOM_TOPICS = [
-  "Philosopher quotes",
+  "Quotes from acient Philosopers",
   "starting new habits and overcoming procrastination",
   "dealing with failure and building resilience",
   "time management and prioritization",
@@ -141,7 +141,6 @@ async function postTextOnly(): Promise<boolean> {
       return false;
     }
     
-    // Direct Twitter API call
     const result = await twitterClient.v2.tweet(tweetText);
     console.log("✅ Tweet posted! ID:", result.data.id);
     
@@ -168,11 +167,11 @@ async function postWithImage(): Promise<boolean> {
       max_tokens: 100,
       messages: [{
         role: "user",
-        content: `Create a unique watercolor image description for a tweet about: ${topic}. Describe a peaceful scene (courtyard, teacup, window seat, etc). One sentence, focus on mood and composition.`
+        content: `Create a watercolor image description for: ${topic}. One sentence, peaceful scene.`
       }]
     });
     
-    const imagePrompt = imagePromptResponse.choices[0].message.content?.trim() || 'watercolor peaceful scene';
+    const imagePrompt = imagePromptResponse.choices[0].message.content?.trim() || 'peaceful watercolor scene';
     console.log("Image prompt:", imagePrompt);
     
     // Generate tweet text
@@ -193,40 +192,22 @@ async function postWithImage(): Promise<boolean> {
       return false;
     }
     
-    // Generate image
-    const imageGenWorker = wisdom_agent.workers.find(w => w.id === "wisdom_image_gen");
-    if (!imageGenWorker) {
-      console.log("❌ Image gen worker not found");
-      return false;
-    }
+    // Generate image with DALL-E 3
+    console.log("🎨 Generating image with DALL-E 3...");
+    const imageResponse = await openai.images.generate({
+      model: "dall-e-3",
+      prompt: imagePrompt,
+      size: "1024x1024",
+      quality: "standard",
+      n: 1,
+    });
     
-    const imageResult = await imageGenWorker.functions
-      .find(f => f.name === 'generate_image')
-      ?.executable({ prompt: imagePrompt, width: '768', height: '768' }, (msg: string) => console.log(`[ImageGen] ${msg}`));
-    
-    if (imageResult?.status !== 'done') {
-      console.log("❌ Image generation failed");
-      return false;
-    }
-    
-    // Get image URL
-    const urlHandlerWorker = wisdom_agent.workers.find(w => w.id === "image_url_handler");
-    if (!urlHandlerWorker) {
-      console.log("❌ URL handler worker not found");
-      return false;
-    }
-    
-    const urlResult = await urlHandlerWorker.functions
-      .find(f => f.name === 'get_latest_image_url')
-      ?.executable({}, (msg: string) => console.log(`[URLHandler] ${msg}`));
-    
-    if (urlResult?.status !== 'done') {
-      console.log("❌ Failed to get image URL");
-      return false;
-    }
-    
-    const imageUrl = urlResult.feedback;
-    console.log("Image URL:", imageUrl);
+    if (!imageResponse.data || !imageResponse.data[0]?.url) {
+  console.log("❌ No image URL returned");
+  return false;
+}
+
+const imageUrl = imageResponse.data[0].url;
     
     // Post with image using media worker
     const mediaWorker = wisdom_agent.workers.find(w => w.id === "twitter_media_worker");
@@ -304,7 +285,7 @@ const server = http.createServer((request, response) => {
 
 Status: Running
 Posts per day: ${POSTS_PER_DAY}
-Post interval: ${POST_INTERVAL / 60000} minutes
+Post interval: ${(POST_INTERVAL / 60000).toFixed(1)} minutes
 
 Stats:
 - Total Posts: ${totalPosts}
@@ -382,7 +363,6 @@ async function main(): Promise<void> {
   console.log("- TWITTER_API_SECRET:", !!process.env.TWITTER_API_SECRET ? "✅" : "❌");
   console.log("- TWITTER_ACCESS_TOKEN:", !!process.env.TWITTER_ACCESS_TOKEN ? "✅" : "❌");
   console.log("- TWITTER_ACCESS_SECRET:", !!process.env.TWITTER_ACCESS_SECRET ? "✅" : "❌");
-  console.log("- TOGETHER_API_KEY:", !!process.env.TOGETHER_API_KEY ? "✅" : "❌");
   console.log(`\n📊 Config: ${POSTS_PER_DAY} posts/day (every ${(POST_INTERVAL / 60000).toFixed(1)} minutes)`);
   console.log(`📊 Cycle: ${IMAGES_PER_CYCLE} image per ${POSTS_PER_CYCLE} posts\n`);
   
