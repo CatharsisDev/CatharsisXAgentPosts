@@ -11,13 +11,6 @@ const twitterClient = new TwitterApi({
   accessSecret: process.env.TWITTER_ACCESS_SECRET!,
 });
 
-console.log("Twitter creds check:", {
-  key: !!process.env.TWITTER_API_KEY,
-  secret: !!process.env.TWITTER_API_SECRET,
-  token: !!process.env.TWITTER_ACCESS_TOKEN,
-  tokenSecret: !!process.env.TWITTER_ACCESS_SECRET
-});
-
 // Create plugin
 export const twitterPlugin = new TwitterPlugin({
   id: "wisdom_twitter_worker",

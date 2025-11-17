@@ -392,6 +392,13 @@ async function main(): Promise<void> {
   console.log(`\n📊 Config: ${POSTS_PER_DAY} posts/day (every ${POST_INTERVAL / 60000} minutes)`);
   console.log(`📊 Cycle: ${IMAGES_PER_CYCLE} image per ${POSTS_PER_CYCLE} posts\n`);
   
+  console.log("Twitter creds check:", {
+  key: !!process.env.TWITTER_API_KEY,
+  secret: !!process.env.TWITTER_API_SECRET,
+  token: !!process.env.TWITTER_ACCESS_TOKEN,
+  tokenSecret: !!process.env.TWITTER_ACCESS_SECRET
+});
+  
   try {
     console.log("Initializing agent...");
     await wisdom_agent.init();
