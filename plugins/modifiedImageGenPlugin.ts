@@ -1,5 +1,6 @@
 import ImageGenPlugin from "@virtuals-protocol/game-imagegen-plugin";
 import { storeImageUrl, getLastImageUrl } from './imageUrlHandler';
+import fetch from 'node-fetch';
 
 // Default image dimensions
 const DEFAULT_WIDTH = 1440;
