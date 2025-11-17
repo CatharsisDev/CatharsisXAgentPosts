@@ -1,0 +1,28 @@
+{
+  "name": "wisdom-twitter-bot",
+  "version": "1.0.0",
+  "description": "Twitter bot that posts wisdom",
+  "main": "dist/index.js",
+  "scripts": {
+    "prebuild": "rm -rf dist",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@virtuals-protocol/game": "^0.1.10",
+    "@virtuals-protocol/game-imagegen-plugin": "^0.1.0",
+    "@virtuals-protocol/game-twitter-node": "^0.1.4",
+    "@virtuals-protocol/game-twitter-plugin": "^0.1.8",
+    "axios": "^1.8.4",
+    "dotenv": "^16.3.1",
+    "openai": "^4.104.0",
+    "twitter-api-v2": "^1.27.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.18",
+    "typescript": "^4.9.5"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
