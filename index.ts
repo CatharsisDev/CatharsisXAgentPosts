@@ -17,7 +17,7 @@ const twitterClient = new TwitterApi({
 });
 
 // Configuration
-const POSTS_PER_DAY = 96;
+const POSTS_PER_DAY = 75;
 const POST_INTERVAL = (24 * 60 * 60 * 1000) / POSTS_PER_DAY;
 const POSTS_PER_CYCLE = 5;
 const IMAGES_PER_CYCLE = 1;
