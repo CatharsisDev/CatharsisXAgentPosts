@@ -163,13 +163,23 @@ async function postWithImage(): Promise<boolean> {
   try {
     // Generate image prompt
     const imagePromptResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
-      max_tokens: 100,
-      messages: [{
-        role: "user",
-        content: `Create a watercolor image description for: ${topic}. One sentence, peaceful scene.`
-      }]
-    });
+  model: "gpt-4o",
+  max_tokens: 150,
+  messages: [{
+    role: "user",
+    content: `Create an image prompt for DALL-E 3 about: ${topic}
+
+Style requirements:
+- Soft watercolor painting style
+- Muted earth tones (beige, soft browns, sage green)
+- Gentle, diffused natural lighting
+- Peaceful, contemplative mood
+- Simple composition (courtyard, teacup, window, book, etc)
+- Avoid: bright colors, modern elements, busy scenes
+
+Write one detailed sentence describing the scene in watercolor style.`
+  }]
+});
     
     const imagePrompt = imagePromptResponse.choices[0].message.content?.trim() || 'peaceful watercolor scene';
     console.log("Image prompt:", imagePrompt);
