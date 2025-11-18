@@ -124,12 +124,26 @@ async function postTextOnly(): Promise<boolean> {
   console.log(`📝 Creating text post about: ${topic}`);
   
   try {
+    let promptContent = '';
+    
+    // Special handling for philosopher quotes
+    if (topic.toLowerCase().includes('philosopher') || topic.toLowerCase().includes('quotes')) {
+      promptContent = `Share a profound quote from an ancient philosopher (Socrates, Plato, Aristotle, Marcus Aurelius, Seneca, Epictetus, Confucius, Laozi).
+
+Format:
+"[exact quote]" - [Philosopher name]
+
+One brief sentence relating it to modern life. No hashtags.`;
+    } else {
+      promptContent = `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags.`;
+    }
+    
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      max_tokens: 100,
+      max_tokens: 150,
       messages: [{
         role: "user",
-        content: `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags.`
+        content: promptContent
       }]
     });
     
