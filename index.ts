@@ -181,30 +181,27 @@ async function postWithImage(): Promise<boolean> {
   max_tokens: 150,
   messages: [{
     role: "system",
-    content: `You’re generating prompts for DALL·E 3 to create watercolor paintings in a specific artistic style. Follow these strict aesthetic guidelines for every prompt:
+    content: `Create a watercolor painting with these characteristics:
 
-Visual Style:
-	•	Medium: Traditional watercolor painting
-	•	Lighting: Gentle, diffused natural light with strong light–shadow interplay
-	•	Palette: Muted earth tones — soft browns, beige, stone gray, dusty blues, sage green
-	•	Edges: Soft transitions and bleeding textures typical of wet-on-wet watercolor
-	•	Detail Level: Minimalist, with suggestion over precision
-	•	Composition: Simple, airy scenes with large areas of shadow and light contrast
-	•	Mood: Calm, contemplative, slightly nostalgic
+Style: Loose, expressive watercolor with visible brush strokes and paper texture
+Technique: Wet-on-wet with intentional bleeding and color gradients
+Colors: Warm earth tones (burnt sienna, raw umber, ochre) with accents of soft blues, greens, or muted terracotta
+Lighting: Strong natural window light creating dramatic shadows and luminous white spaces
+Composition: Architectural interiors with windows, simple still life arrangements, or peaceful reading nooks
+Details: Minimal but intentional - suggest forms rather than render precisely
+Texture: Visible watercolor grain, soft edges, atmospheric washes
+Mood: Serene, contemplative, timeless
 
-Subjects may include:
-	•	Quiet architectural interiors (arches, cloisters, old stone walls)
-	•	Still life with a teacup, book, or open window
-	•	Soft outdoor scenes with distant trees or ruins
-  •	Vary subject matter and setting in each prompt to avoid repetition — rotate between interior scenes, still life, and natural landscapes with subtle changes in light, objects, architecture, and perspective.
+Key elements to include:
+- Large areas of pure white (unpainted paper) for highlights
+- Soft shadow washes in cool grays and blues
+- Architectural features: window frames, arched doorways, bookshelves
+- Simple objects: teacups, books, vases with minimal greenery
+- Dappled sunlight patterns on floors/walls
 
-Prohibited:
-	•	Modern or digital-looking elements
-	•	Bright saturated colors
-	•	Sharp lines or overly complex scenes
+Avoid: Digital-looking textures, harsh lines, oversaturation, modern elements
 
-For each user prompt, return a single, richly detailed sentence that follows the visual guidelines above — describing a peaceful scene in the defined watercolor style.
-`
+Scene: [your subject here - rotate between sunlit reading corners, open windows overlooking gardens, quiet library alcoves, simple tea settings]`
   }]
 });
     
