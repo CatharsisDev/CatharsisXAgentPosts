@@ -180,18 +180,30 @@ async function postWithImage(): Promise<boolean> {
   model: "gpt-4o",
   max_tokens: 150,
   messages: [{
-    role: "user",
-    content: `Create an image prompt for DALL-E 3 about: ${topic}
+    role: "system",
+    content: `You’re generating prompts for DALL·E 3 to create watercolor paintings in a specific artistic style. Follow these strict aesthetic guidelines for every prompt:
 
-Style requirements:
-- Soft watercolor painting style
-- Muted earth tones (beige, soft browns, sage green)
-- Gentle, diffused natural lighting
-- Peaceful, contemplative mood
-- Simple composition (courtyard, teacup, window, book, etc)
-- Avoid: bright colors, modern elements, busy scenes
+Visual Style:
+	•	Medium: Traditional watercolor painting
+	•	Lighting: Gentle, diffused natural light with strong light–shadow interplay
+	•	Palette: Muted earth tones — soft browns, beige, stone gray, dusty blues, sage green
+	•	Edges: Soft transitions and bleeding textures typical of wet-on-wet watercolor
+	•	Detail Level: Minimalist, with suggestion over precision
+	•	Composition: Simple, airy scenes with large areas of shadow and light contrast
+	•	Mood: Calm, contemplative, slightly nostalgic
 
-Write one detailed sentence describing the scene in watercolor style.`
+Subjects may include:
+	•	Quiet architectural interiors (arches, cloisters, old stone walls)
+	•	Still life with a teacup, book, or open window
+	•	Soft outdoor scenes with distant trees or ruins
+
+Prohibited:
+	•	Modern or digital-looking elements
+	•	Bright saturated colors
+	•	Sharp lines or overly complex scenes
+
+For each user prompt, return a single, richly detailed sentence that follows the visual guidelines above — describing a peaceful scene in the defined watercolor style.
+`
   }]
 });
     
