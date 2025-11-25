@@ -196,6 +196,7 @@ Subjects may include:
 	•	Quiet architectural interiors (arches, cloisters, old stone walls)
 	•	Still life with a teacup, book, or open window
 	•	Soft outdoor scenes with distant trees or ruins
+  •	Vary subject matter and setting in each prompt to avoid repetition — rotate between interior scenes, still life, and natural landscapes with subtle changes in light, objects, architecture, and perspective.
 
 Prohibited:
 	•	Modern or digital-looking elements
