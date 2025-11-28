@@ -12,6 +12,7 @@ console.log("TOGETHER_API_KEY exists:", !!process.env.TOGETHER_API_KEY);
 console.log("INSTAGRAM_ACCESS_TOKEN exists:", !!process.env.INSTAGRAM_ACCESS_TOKEN);
 console.log("INSTAGRAM_ACCOUNT_ID exists:", !!process.env.INSTAGRAM_ACCOUNT_ID);
 
+/*
 if (!process.env.API_KEY) {
     throw new Error('API_KEY is required in environment variables');
 }
@@ -27,6 +28,7 @@ if (!process.env.INSTAGRAM_ACCESS_TOKEN) {
 if (!process.env.INSTAGRAM_ACCOUNT_ID) {
     throw new Error('INSTAGRAM_ACCOUNT_ID is required in environment variables');
 }
+*/
 
 const imageGenConfig = {
     id: "wisdom_image_gen",
