@@ -26,13 +26,14 @@ const IMAGES_PER_CYCLE = 1;
 const WATERCOLOR_STYLE = `Traditional watercolor painting with these exact characteristics:
 - Visible brush strokes and paper texture
 - Wet-on-wet technique with intentional bleeding
-- Color palette: warm earth tones (burnt sienna, raw umber, ochre) with soft blue, sage green, or muted terracotta accents
+- Color palette: VERY muted and desaturated - pale ochre, light taupe, soft beige, dusty rose, faded sage green, weathered terracotta, all colors heavily diluted with water
 - Strong natural window light creating dramatic shadows
 - Large areas of pure white (unpainted paper) for highlights
-- Soft shadow washes in cool grays and blues
+- Soft shadow washes in pale grays and diluted blues
 - Soft edges, atmospheric washes
 - Minimal but intentional details
-- Serene, contemplative mood`;
+- Serene, contemplative mood
+- Overall impression: faded, gentle, low saturation`;
 
 // Scene variations to rotate through
 const SCENE_TYPES = [
