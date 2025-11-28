@@ -12,7 +12,6 @@ console.log("TOGETHER_API_KEY exists:", !!process.env.TOGETHER_API_KEY);
 console.log("INSTAGRAM_ACCESS_TOKEN exists:", !!process.env.INSTAGRAM_ACCESS_TOKEN);
 console.log("INSTAGRAM_ACCOUNT_ID exists:", !!process.env.INSTAGRAM_ACCOUNT_ID);
 
-/*
 if (!process.env.API_KEY) {
     throw new Error('API_KEY is required in environment variables');
 }
@@ -20,15 +19,6 @@ if (!process.env.API_KEY) {
 if (!process.env.TOGETHER_API_KEY) {
     throw new Error('TOGETHER_API_KEY is required in environment variables');
 }
-
-if (!process.env.INSTAGRAM_ACCESS_TOKEN) {
-    throw new Error('INSTAGRAM_ACCESS_TOKEN is required in environment variables');
-}
-
-if (!process.env.INSTAGRAM_ACCOUNT_ID) {
-    throw new Error('INSTAGRAM_ACCOUNT_ID is required in environment variables');
-}
-*/
 
 const imageGenConfig = {
     id: "wisdom_image_gen",
@@ -52,12 +42,18 @@ const twitterMediaWorker = createTwitterMediaWorker(
 );
 const twitterWorker = twitterPlugin.getWorker();
 
-// Initialize Instagram plugin
-const instagramPlugin = new InstagramPlugin({
-    accessToken: process.env.INSTAGRAM_ACCESS_TOKEN!,
-    accountId: process.env.INSTAGRAM_ACCOUNT_ID!,
-});
-const instagramWorker = instagramPlugin.getWorker();
+// Initialize Instagram plugin conditionally
+let instagramWorker;
+if (process.env.INSTAGRAM_ACCESS_TOKEN && process.env.INSTAGRAM_ACCOUNT_ID) {
+    const instagramPlugin = new InstagramPlugin({
+        accessToken: process.env.INSTAGRAM_ACCESS_TOKEN,
+        accountId: process.env.INSTAGRAM_ACCOUNT_ID,
+    });
+    instagramWorker = instagramPlugin.getWorker();
+    console.log("✅ Instagram enabled");
+} else {
+    console.log("⚠️ Instagram disabled (missing credentials)");
+}
 
 export const wisdom_agent = new GameAgent(process.env.API_KEY, {
     name: "AIleen",
@@ -75,7 +71,7 @@ Just do exactly what the current instruction tells you to do.`,
         enhancedImageGenWorker,
         twitterMediaWorker,
         imageUrlHandlerWorker,
-        instagramWorker,
+        ...(instagramWorker ? [instagramWorker] : []),
     ],
     llmModel: LLMModel.Llama_3_3_70B_Instruct,
     getAgentState: async () => {
