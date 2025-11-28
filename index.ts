@@ -22,6 +22,40 @@ const POST_INTERVAL = (24 * 60 * 60 * 1000) / POSTS_PER_DAY;
 const POSTS_PER_CYCLE = 5;
 const IMAGES_PER_CYCLE = 1;
 
+// Consistent watercolor style
+const WATERCOLOR_STYLE = `Traditional watercolor painting with these exact characteristics:
+- Visible brush strokes and paper texture
+- Wet-on-wet technique with intentional bleeding
+- Color palette: warm earth tones (burnt sienna, raw umber, ochre) with soft blue, sage green, or muted terracotta accents
+- Strong natural window light creating dramatic shadows
+- Large areas of pure white (unpainted paper) for highlights
+- Soft shadow washes in cool grays and blues
+- Soft edges, atmospheric washes
+- Minimal but intentional details
+- Serene, contemplative mood`;
+
+// Scene variations to rotate through
+const SCENE_TYPES = [
+  "Sunlit reading corner with an armchair, open book, and large arched window",
+  "Open window overlooking a distant garden with soft morning light",
+  "Quiet library alcove with bookshelves and dappled sunlight on the floor",
+  "Simple tea setting on a wooden table near a window",
+  "Garden bench under a tree with filtered light through leaves",
+  "Peaceful courtyard with a small fountain and stone archways",
+  "Morning light streaming through a hallway with columns",
+  "Window seat with cushions and a view of hills in the distance",
+  "Writing desk by a window with vintage books and a teacup",
+  "Cloister walkway with arches and soft shadows on stone floor"
+];
+
+let currentSceneIndex = 0;
+
+function getNextScene(): string {
+  const scene = SCENE_TYPES[currentSceneIndex];
+  currentSceneIndex = (currentSceneIndex + 1) % SCENE_TYPES.length;
+  return scene;
+}
+
 // State
 let postsInCurrentCycle = 0;
 let imagesInCurrentCycle = 0;
@@ -45,7 +79,8 @@ function saveState() {
       totalPosts,
       imagePosts,
       textPosts,
-      lastPostTime
+      lastPostTime,
+      currentSceneIndex
     }, null, 2));
     
     console.log('💾 State saved');
@@ -64,6 +99,7 @@ function loadState() {
       imagePosts = state.imagePosts || 0;
       textPosts = state.textPosts || 0;
       lastPostTime = state.lastPostTime || 0;
+      currentSceneIndex = state.currentSceneIndex || 0;
       
       console.log('✅ State loaded:', {
         totalPosts,
@@ -79,7 +115,7 @@ function loadState() {
 }
 
 const WISDOM_TOPICS = [
-  "Quotes from acient Philosopers",
+  "Quotes from ancient Philosophers",
   "starting new habits and overcoming procrastination",
   "dealing with failure and building resilience",
   "time management and prioritization",
@@ -175,37 +211,24 @@ async function postWithImage(): Promise<boolean> {
   console.log(`🖼️ Creating image post about: ${topic}`);
   
   try {
-    // Generate image prompt
-    const imagePromptResponse = await openai.chat.completions.create({
-  model: "gpt-4o",
-  max_tokens: 150,
-  messages: [{
-    role: "system",
-    content: `Create a watercolor painting with these characteristics:
-
-Style: Loose, expressive watercolor with visible brush strokes and paper texture
-Technique: Wet-on-wet with intentional bleeding and color gradients
-Colors: Warm earth tones (burnt sienna, raw umber, ochre) with accents of soft blues, greens, or muted terracotta
-Lighting: Strong natural window light creating dramatic shadows and luminous white spaces
-Composition: Architectural interiors with windows, simple still life arrangements, or peaceful reading nooks
-Details: Minimal but intentional - suggest forms rather than render precisely
-Texture: Visible watercolor grain, soft edges, atmospheric washes
-Mood: Serene, contemplative, timeless
-
-Key elements to include:
-- Large areas of pure white (unpainted paper) for highlights
-- Soft shadow washes in cool grays and blues
-- Architectural features: window frames, arched doorways, bookshelves
-- Simple objects: teacups, books, vases with minimal greenery
-- Dappled sunlight patterns on floors/walls
-
-Avoid: Digital-looking textures, harsh lines, oversaturation, modern elements
-
-Scene: [your subject here - rotate between sunlit reading corners, open windows overlooking gardens, quiet library alcoves, simple tea settings]`
-  }]
-});
+    // Get next scene for variety
+    const sceneDescription = getNextScene();
     
-    const imagePrompt = imagePromptResponse.choices[0].message.content?.trim() || 'peaceful watercolor scene';
+    // Generate image prompt with consistent style
+    const imagePromptResponse = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_tokens: 200,
+      messages: [{
+        role: "user",
+        content: `${WATERCOLOR_STYLE}
+
+Scene to paint: ${sceneDescription}
+
+Write a single detailed sentence describing this exact scene in watercolor style. Focus on light, shadows, and the peaceful atmosphere.`
+      }]
+    });
+    
+    const imagePrompt = imagePromptResponse.choices[0].message.content?.trim() || 'peaceful watercolor interior scene with window light';
     console.log("Image prompt:", imagePrompt);
     
     // Generate tweet text
@@ -237,11 +260,11 @@ Scene: [your subject here - rotate between sunlit reading corners, open windows 
     });
     
     if (!imageResponse.data || !imageResponse.data[0]?.url) {
-  console.log("❌ No image URL returned");
-  return false;
-}
+      console.log("❌ No image URL returned");
+      return false;
+    }
 
-const imageUrl = imageResponse.data[0].url;
+    const imageUrl = imageResponse.data[0].url;
     
     // Post with image using media worker
     const mediaWorker = wisdom_agent.workers.find(w => w.id === "twitter_media_worker");
