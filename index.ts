@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import OpenAI from 'openai';
 import { TwitterApi } from '@virtuals-protocol/game-twitter-node';
+import { ImageHostPlugin } from './plugins/imageHostPlugin';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!
@@ -14,6 +15,10 @@ const twitterClient = new TwitterApi({
   appSecret: process.env.TWITTER_API_SECRET!,
   accessToken: process.env.TWITTER_ACCESS_TOKEN!,
   accessSecret: process.env.TWITTER_ACCESS_SECRET!,
+});
+
+const imageHostPlugin = new ImageHostPlugin({
+  apiKey: process.env.IMGBB_API_KEY!,
 });
 
 // Configuration
@@ -64,6 +69,7 @@ let lastPostTime = 0;
 let totalPosts = 0;
 let imagePosts = 0;
 let textPosts = 0;
+let instagramPosts = 0;
 
 const STATE_FILE = '/app/data/poster_state.json';
 
@@ -80,6 +86,7 @@ function saveState() {
       totalPosts,
       imagePosts,
       textPosts,
+      instagramPosts,
       lastPostTime,
       currentSceneIndex
     }, null, 2));
@@ -99,6 +106,7 @@ function loadState() {
       totalPosts = state.totalPosts || 0;
       imagePosts = state.imagePosts || 0;
       textPosts = state.textPosts || 0;
+      instagramPosts = state.instagramPosts || 0;
       lastPostTime = state.lastPostTime || 0;
       currentSceneIndex = state.currentSceneIndex || 0;
       
@@ -106,6 +114,7 @@ function loadState() {
         totalPosts,
         imagePosts,
         textPosts,
+        instagramPosts,
         postsInCycle: postsInCurrentCycle,
         imagesInCycle: imagesInCurrentCycle
       });
@@ -267,7 +276,7 @@ Write a single detailed sentence describing this exact scene in watercolor style
 
     const imageUrl = imageResponse.data[0].url;
     
-    // Post with image using media worker
+    // Post to Twitter first
     const mediaWorker = wisdom_agent.workers.find(w => w.id === "twitter_media_worker");
     if (!mediaWorker) {
       console.log("❌ Media worker not found");
@@ -278,19 +287,60 @@ Write a single detailed sentence describing this exact scene in watercolor style
       .find(f => f.name === 'upload_image_and_tweet')
       ?.executable({ text: tweetText, image_url: imageUrl }, (msg: string) => console.log(`[Twitter] ${msg}`));
     
-    if (postResult?.status === 'done') {
-      console.log("✅ Image post successful!");
-      lastPostTime = Date.now();
-      totalPosts++;
-      imagePosts++;
-      imagesInCurrentCycle++;
-      postsInCurrentCycle++;
-      saveState();
-      return true;
-    } else {
-      console.log("❌ Failed to post with image - Status:", postResult?.status);
+    if (postResult?.status !== 'done') {
+      console.log("❌ Failed to post to Twitter - Status:", postResult?.status);
       return false;
     }
+    
+    console.log("✅ Twitter post successful!");
+    
+    // Now post to Instagram
+    try {
+      console.log("📸 Preparing Instagram post...");
+      
+      // Download image as buffer
+      const imageBufferResponse = await fetch(imageUrl);
+      const imageArrayBuffer = await imageBufferResponse.arrayBuffer();
+      const imageBuffer = Buffer.from(imageArrayBuffer);
+      
+      // Upload to ImgBB
+      console.log("🔗 Uploading to image host...");
+      const uploadResult = await imageHostPlugin.uploadImage(imageBuffer, `post_${Date.now()}`);
+      
+      if (!uploadResult.success || !uploadResult.url) {
+        console.log("⚠️ Image upload failed, skipping Instagram");
+      } else {
+        console.log("✅ Image hosted at:", uploadResult.url);
+        
+        // Post to Instagram
+        const instagramWorker = wisdom_agent.workers.find(w => w.id === "instagram_worker");
+        if (instagramWorker) {
+          const instagramResult = await instagramWorker.functions
+            .find(f => f.name === 'post_to_instagram')
+            ?.executable(
+              { imageUrl: uploadResult.url, caption: tweetText }, 
+              (msg: string) => console.log(`[Instagram] ${msg}`)
+            );
+          
+          if (instagramResult?.status === 'done') {
+            console.log("✅ Instagram post successful!");
+            instagramPosts++;
+          } else {
+            console.log("⚠️ Instagram post failed");
+          }
+        }
+      }
+    } catch (instagramError: any) {
+      console.log("⚠️ Instagram posting error (continuing anyway):", instagramError.message);
+    }
+    
+    lastPostTime = Date.now();
+    totalPosts++;
+    imagePosts++;
+    imagesInCurrentCycle++;
+    postsInCurrentCycle++;
+    saveState();
+    return true;
   } catch (error: any) {
     console.error("❌ Image post error:", error.message);
     return false;
@@ -327,7 +377,7 @@ async function attemptPost(): Promise<void> {
   
   if (success) {
     const imagePercentage = totalPosts > 0 ? (imagePosts / totalPosts * 100).toFixed(1) : '0.0';
-    console.log(`📊 Total: ${totalPosts} posts (${imagePosts} images [${imagePercentage}%], ${textPosts} text)`);
+    console.log(`📊 Total: ${totalPosts} posts (${imagePosts} images [${imagePercentage}%], ${textPosts} text, ${instagramPosts} Instagram)`);
   }
 }
 
@@ -349,6 +399,7 @@ Stats:
 - Total Posts: ${totalPosts}
 - Image Posts: ${imagePosts} (${imagePercentage}%)
 - Text Posts: ${textPosts}
+- Instagram Posts: ${instagramPosts}
 - Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
 
 Timing:
@@ -421,6 +472,9 @@ async function main(): Promise<void> {
   console.log("- TWITTER_API_SECRET:", !!process.env.TWITTER_API_SECRET ? "✅" : "❌");
   console.log("- TWITTER_ACCESS_TOKEN:", !!process.env.TWITTER_ACCESS_TOKEN ? "✅" : "❌");
   console.log("- TWITTER_ACCESS_SECRET:", !!process.env.TWITTER_ACCESS_SECRET ? "✅" : "❌");
+  console.log("- INSTAGRAM_ACCESS_TOKEN:", !!process.env.INSTAGRAM_ACCESS_TOKEN ? "✅" : "❌");
+  console.log("- INSTAGRAM_ACCOUNT_ID:", !!process.env.INSTAGRAM_ACCOUNT_ID ? "✅" : "❌");
+  console.log("- IMGBB_API_KEY:", !!process.env.IMGBB_API_KEY ? "✅" : "❌");
   console.log(`\n📊 Config: ${POSTS_PER_DAY} posts/day (every ${(POST_INTERVAL / 60000).toFixed(1)} minutes)`);
   console.log(`📊 Cycle: ${IMAGES_PER_CYCLE} image per ${POSTS_PER_CYCLE} posts\n`);
   
