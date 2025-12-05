@@ -26,6 +26,7 @@ const POSTS_PER_DAY = 5;
 const POST_INTERVAL = (24 * 60 * 60 * 1000) / POSTS_PER_DAY;
 const POSTS_PER_CYCLE = 5;
 const IMAGES_PER_CYCLE = 1;
+const INSTAGRAM_MAX_RETRIES = 2;
 
 // Consistent watercolor style
 const WATERCOLOR_STYLE = `Traditional watercolor painting with these exact characteristics:
@@ -294,7 +295,7 @@ Write a single detailed sentence describing this exact scene in watercolor style
     
     console.log("✅ Twitter post successful!");
     
-    // Now post to Instagram
+    // Now post to Instagram with retry logic
     try {
       console.log("📸 Preparing Instagram post...");
       
@@ -312,21 +313,40 @@ Write a single detailed sentence describing this exact scene in watercolor style
       } else {
         console.log("✅ Image hosted at:", uploadResult.url);
         
-        // Post to Instagram
+        // Post to Instagram with retry
         const instagramWorker = wisdom_agent.workers.find(w => w.id === "instagram_worker");
         if (instagramWorker) {
-          const instagramResult = await instagramWorker.functions
-            .find(f => f.name === 'post_to_instagram')
-            ?.executable(
-              { imageUrl: uploadResult.url, caption: tweetText }, 
-              (msg: string) => console.log(`[Instagram] ${msg}`)
-            );
+          let instagramSuccess = false;
           
-          if (instagramResult?.status === 'done') {
-            console.log("✅ Instagram post successful!");
-            instagramPosts++;
-          } else {
-            console.log("⚠️ Instagram post failed");
+          for (let attempt = 1; attempt <= INSTAGRAM_MAX_RETRIES && !instagramSuccess; attempt++) {
+            try {
+              if (attempt > 1) {
+                console.log(`🔄 Instagram retry attempt ${attempt}/${INSTAGRAM_MAX_RETRIES}...`);
+                // Wait 5 seconds between retries
+                await new Promise(resolve => setTimeout(resolve, 5000));
+              }
+              
+              const instagramResult = await instagramWorker.functions
+                .find(f => f.name === 'post_to_instagram')
+                ?.executable(
+                  { imageUrl: uploadResult.url, caption: tweetText }, 
+                  (msg: string) => console.log(`[Instagram] ${msg}`)
+                );
+              
+              if (instagramResult?.status === 'done') {
+                console.log("✅ Instagram post successful!");
+                instagramPosts++;
+                instagramSuccess = true;
+              } else {
+                console.log(`⚠️ Instagram post attempt ${attempt} failed`);
+              }
+            } catch (retryError: any) {
+              console.log(`⚠️ Instagram attempt ${attempt} error: ${retryError.message}`);
+            }
+          }
+          
+          if (!instagramSuccess) {
+            console.log("❌ Instagram post failed after all retries");
           }
         }
       }

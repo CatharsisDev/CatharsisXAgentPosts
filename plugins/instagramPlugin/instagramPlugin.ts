@@ -15,6 +15,7 @@ export class InstagramPlugin {
   private accountId: string;
   private readonly API_VERSION = "v21.0";
   private readonly BASE_URL = "https://graph.facebook.com";
+  private readonly TIMEOUT_MS = 30000; // 30 seconds
 
   constructor(config: InstagramConfig) {
     this.accessToken = config.accessToken;
@@ -27,52 +28,80 @@ export class InstagramPlugin {
   ): Promise<string> {
     const url = `${this.BASE_URL}/${this.API_VERSION}/${this.accountId}/media`;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        image_url: imageUrl,
-        caption: caption,
-        access_token: this.accessToken,
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.TIMEOUT_MS);
 
-    const data:any = await response.json();
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          image_url: imageUrl,
+          caption: caption,
+          access_token: this.accessToken,
+        }),
+        signal: controller.signal,
+      });
 
-    if (data.error) {
-      throw new Error(
-        `Instagram container creation failed: ${data.error.message}`
-      );
+      clearTimeout(timeoutId);
+
+      const data: any = await response.json();
+
+      if (data.error) {
+        throw new Error(
+          `Instagram container creation failed: ${data.error.message}`
+        );
+      }
+
+      return data.id;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Instagram container creation timed out');
+      }
+      throw error;
     }
-
-    return data.id;
   }
 
   private async publishMediaContainer(containerId: string): Promise<string> {
     const url = `${this.BASE_URL}/${this.API_VERSION}/${this.accountId}/media_publish`;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        creation_id: containerId,
-        access_token: this.accessToken,
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.TIMEOUT_MS);
 
-    const data: any = await response.json();
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          creation_id: containerId,
+          access_token: this.accessToken,
+        }),
+        signal: controller.signal,
+      });
 
-    if (data.error) {
-      throw new Error(
-        `Instagram publish failed: ${data.error.message}`
-      );
+      clearTimeout(timeoutId);
+
+      const data: any = await response.json();
+
+      if (data.error) {
+        throw new Error(
+          `Instagram publish failed: ${data.error.message}`
+        );
+      }
+
+      return data.id;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Instagram publish timed out');
+      }
+      throw error;
     }
-
-    return data.id;
   }
 
   private postToInstagram = new GameFunction({

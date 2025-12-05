@@ -20,7 +20,9 @@ if (!process.env.TOGETHER_API_KEY) {
     throw new Error('TOGETHER_API_KEY is required in environment variables');
 }
 
-const imageGenConfig = {
+//Old Together API implementation
+
+/*const imageGenConfig = {
     id: "wisdom_image_gen",
     name: "Wisdom Image Generator",
     description: "Generates images to accompany wisdom tweets",
@@ -31,9 +33,13 @@ const imageGenConfig = {
         baseApiUrl: "https://api.together.xyz/v1/images/generations"
     }
 };
+*/
 
-const enhancedImageGenWorker = createEnhancedImageGenPlugin(imageGenConfig);
+/*const enhancedImageGenWorker = createEnhancedImageGenPlugin(imageGenConfig);
 const imageUrlHandlerWorker = createImageUrlHandlerWorker();
+*/
+
+
 const twitterMediaWorker = createTwitterMediaWorker(
     process.env.TWITTER_API_KEY!,
     process.env.TWITTER_API_SECRET!,
@@ -68,9 +74,7 @@ Just do exactly what the current instruction tells you to do.`,
 
     workers: [
         twitterWorker,
-        enhancedImageGenWorker,
         twitterMediaWorker,
-        imageUrlHandlerWorker,
         ...(instagramWorker ? [instagramWorker] : []),
     ],
     llmModel: LLMModel.Llama_3_3_70B_Instruct,
