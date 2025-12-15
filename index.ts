@@ -210,12 +210,11 @@ async function postTextOnly(isPhilosopherQuote: boolean = false): Promise<boolea
     // Pick a random philosopher
     philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
     console.log(`📝 Creating PHILOSOPHER QUOTE post (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY}) from: ${philosopherName}`);
-    promptContent = `Output ONLY a single authentic philosophical quote.
-No attribution line.
-No explanation.
-No emojis.
-No hashtags.
-The quote must be from ${philosopherName}.`;
+    promptContent = `Output ONLY a single authentic philosophical quote by ${philosopherName}.
+Do NOT include quotation marks.
+Do NOT include emojis or hashtags.
+Do NOT include any explanation or commentary.
+Return only the quote text itself.`;
   } else {
     topic = getNextWisdomTopic();
     console.log(`📝 Creating text post about: ${topic}`);
@@ -230,7 +229,10 @@ The quote must be from ${philosopherName}.`;
         content: promptContent
       }]
     });
-    const tweetText = response.choices[0].message.content?.trim() || '';
+    let tweetText = response.choices[0].message.content?.trim() || '';
+    if (isPhilosopher && tweetText) {
+      tweetText = `${tweetText}\n\n— ${philosopherName}`;
+    }
     console.log("Generated text:", tweetText);
     if (!tweetText || tweetText.length < 10) {
       console.log("❌ Failed to generate tweet text");
@@ -456,7 +458,7 @@ Stats:
 - Image Posts: ${imagePosts} (${imagePercentage}%)
 - Text Posts: ${textPosts}
 - Instagram Posts: ${instagramPosts}
-- Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
+- Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${philosopherPosts} philosopher posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
 
 Timing:
 - Last post: ${minutesSincePost} minutes ago
