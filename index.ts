@@ -27,6 +27,7 @@ const POST_INTERVAL = (24 * 60 * 60 * 1000) / POSTS_PER_DAY;
 const POSTS_PER_CYCLE = 8;
 const IMAGES_PER_CYCLE = 1;
 const INSTAGRAM_MAX_RETRIES = 2;
+const PHILOSOPHER_QUOTES_PER_DAY = 4;
 
 // Consistent watercolor style
 const WATERCOLOR_STYLE = `Traditional watercolor painting with these exact characteristics:
@@ -63,15 +64,6 @@ function getNextScene(): string {
   return scene;
 }
 
-// State
-let postsInCurrentCycle = 0;
-let imagesInCurrentCycle = 0;
-let lastPostTime = 0;
-let totalPosts = 0;
-let imagePosts = 0;
-let textPosts = 0;
-let instagramPosts = 0;
-let philosopherPosts = 0;
 // List of philosophers for quote selection
 const PHILOSOPHERS = [
   "Socrates",
@@ -101,7 +93,16 @@ const PHILOSOPHERS = [
   "Albert Camus",
   "Blaise Pascal"
 ];
-const PHILOSOPHER_QUOTES_PER_DAY = 4;
+
+// State
+let postsInCurrentCycle = 0;
+let imagesInCurrentCycle = 0;
+let lastPostTime = 0;
+let totalPosts = 0;
+let imagePosts = 0;
+let textPosts = 0;
+let instagramPosts = 0;
+let philosopherPosts = 0;
 
 const STATE_FILE = '/app/data/poster_state.json';
 
@@ -160,7 +161,6 @@ function loadState() {
 }
 
 const WISDOM_TOPICS = [
-  "Quotes from ancient Philosophers",
   "starting new habits and overcoming procrastination",
   "dealing with failure and building resilience",
   "time management and prioritization",
@@ -206,20 +206,25 @@ async function postTextOnly(isPhilosopherQuote: boolean = false): Promise<boolea
   let promptContent = "";
   let isPhilosopher = isPhilosopherQuote;
   let philosopherName = "";
+  
   if (isPhilosopher) {
     // Pick a random philosopher
     philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
     console.log(`📝 Creating PHILOSOPHER QUOTE post (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY}) from: ${philosopherName}`);
-    promptContent = `Output ONLY a single authentic philosophical quote by ${philosopherName}.
-Do NOT include quotation marks.
-Do NOT include emojis or hashtags.
-Do NOT include any explanation or commentary.
-Return only the quote text itself.`;
+    promptContent = `Output a single authentic quote by ${philosopherName}.
+
+Format:
+"[quote text]"
+
+— ${philosopherName}
+
+Return ONLY the quote in quotes, followed by a line break and the attribution line. Nothing else. No commentary, no explanation.`;
   } else {
     topic = getNextWisdomTopic();
     console.log(`📝 Creating text post about: ${topic}`);
     promptContent = `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags.`;
   }
+  
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
@@ -229,17 +234,19 @@ Return only the quote text itself.`;
         content: promptContent
       }]
     });
-    let tweetText = response.choices[0].message.content?.trim() || '';
-    if (isPhilosopher && tweetText) {
-      tweetText = `${tweetText}\n\n— ${philosopherName}`;
-    }
+    
+    const tweetText = response.choices[0].message.content?.trim() || '';
+    
     console.log("Generated text:", tweetText);
+    
     if (!tweetText || tweetText.length < 10) {
       console.log("❌ Failed to generate tweet text");
       return false;
     }
+    
     const result = await twitterClient.v2.tweet(tweetText);
     console.log("✅ Tweet posted! ID:", result.data.id);
+    
     lastPostTime = Date.now();
     totalPosts++;
     textPosts++;
@@ -408,16 +415,23 @@ Write a single detailed sentence describing this exact scene in watercolor style
 async function attemptPost(): Promise<void> {
   const now = Date.now();
   const timeSinceLastPost = now - lastPostTime;
+  
   if (timeSinceLastPost < POST_INTERVAL) {
     const minutesRemaining = Math.round((POST_INTERVAL - timeSinceLastPost) / 60000);
     console.log(`⏰ Next post in ${minutesRemaining} minutes`);
     return;
   }
+  
   console.log("📢 Time to post!");
   let success = false;
   
-  // Randomly decide if this should be a philosopher post (if quota available)
-  const shouldPostPhilosopher = philosopherPosts < PHILOSOPHER_QUOTES_PER_DAY && Math.random() < 0.5;
+  // Calculate probability to ensure 4 philosopher quotes per cycle
+  const postsRemaining = POSTS_PER_CYCLE - postsInCurrentCycle;
+  const philosopherQuotesNeeded = PHILOSOPHER_QUOTES_PER_DAY - philosopherPosts;
+  const philosopherProbability = philosopherQuotesNeeded / postsRemaining;
+  
+  const shouldPostPhilosopher = philosopherPosts < PHILOSOPHER_QUOTES_PER_DAY && 
+                                 Math.random() < philosopherProbability;
   
   if (shouldPostPhilosopher) {
     console.log(`🔮 Posting philosopher quote (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY})`);
@@ -439,7 +453,7 @@ async function attemptPost(): Promise<void> {
   
   if (success) {
     const imagePercentage = totalPosts > 0 ? (imagePosts / totalPosts * 100).toFixed(1) : '0.0';
-    console.log(`📊 Total: ${totalPosts} posts (${imagePosts} images [${imagePercentage}%], ${textPosts} text, ${instagramPosts} Instagram, ${philosopherPosts} philosopher)`);
+    console.log(`📊 Total: ${totalPosts} posts (${imagePosts} images [${imagePercentage}%], ${textPosts} text, ${instagramPosts} Instagram, ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY} philosopher)`);
   }
 }
 
@@ -462,7 +476,8 @@ Stats:
 - Image Posts: ${imagePosts} (${imagePercentage}%)
 - Text Posts: ${textPosts}
 - Instagram Posts: ${instagramPosts}
-- Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY } philosopher posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
+- Philosopher Posts: ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY}
+- Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
 
 Timing:
 - Last post: ${minutesSincePost} minutes ago
@@ -471,18 +486,18 @@ Timing:
     return;
   }
   
-if (request.url === '/post-text') {
-  postTextOnly()
-    .then(success => {
-      response.writeHead(success ? 200 : 500, {'Content-Type': 'text/plain'});
-      response.end(success ? 'Text post successful' : 'Text post failed');
-    })
-    .catch(err => {
-      response.writeHead(500, {'Content-Type': 'text/plain'});
-      response.end('Error: ' + err.message);
-    });
-  return;
-}
+  if (request.url === '/post-text') {
+    postTextOnly()
+      .then(success => {
+        response.writeHead(success ? 200 : 500, {'Content-Type': 'text/plain'});
+        response.end(success ? 'Text post successful' : 'Text post failed');
+      })
+      .catch(err => {
+        response.writeHead(500, {'Content-Type': 'text/plain'});
+        response.end('Error: ' + err.message);
+      });
+    return;
+  }
   
   if (request.url === '/post-image') {
     postWithImage()
@@ -500,6 +515,7 @@ if (request.url === '/post-text') {
   if (request.url === '/reset') {
     postsInCurrentCycle = 0;
     imagesInCurrentCycle = 0;
+    philosopherPosts = 0;
     saveState();
     response.writeHead(200, {'Content-Type': 'text/plain'});
     response.end('Cycle reset');
@@ -538,7 +554,7 @@ async function main(): Promise<void> {
   console.log("- INSTAGRAM_ACCOUNT_ID:", !!process.env.INSTAGRAM_ACCOUNT_ID ? "✅" : "❌");
   console.log("- IMGBB_API_KEY:", !!process.env.IMGBB_API_KEY ? "✅" : "❌");
   console.log(`\n📊 Config: ${POSTS_PER_DAY} posts/day (every ${(POST_INTERVAL / 60000).toFixed(1)} minutes)`);
-  console.log(`📊 Cycle: ${IMAGES_PER_CYCLE} image per ${POSTS_PER_CYCLE} posts\n`);
+  console.log(`📊 Cycle: ${IMAGES_PER_CYCLE} image per ${POSTS_PER_CYCLE} posts, ${PHILOSOPHER_QUOTES_PER_DAY} philosopher quotes\n`);
   
   try {
     console.log("Initializing agent...");
