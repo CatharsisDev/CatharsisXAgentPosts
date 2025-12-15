@@ -415,9 +415,12 @@ async function attemptPost(): Promise<void> {
   }
   console.log("📢 Time to post!");
   let success = false;
-  // If not yet reached philosopher quote quota, force philosopher quote (no image)
-  if (philosopherPosts < PHILOSOPHER_QUOTES_PER_DAY) {
-    console.log(`🔮 Forcing philosopher quote post (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY})`);
+  
+  // Randomly decide if this should be a philosopher post (if quota available)
+  const shouldPostPhilosopher = philosopherPosts < PHILOSOPHER_QUOTES_PER_DAY && Math.random() < 0.5;
+  
+  if (shouldPostPhilosopher) {
+    console.log(`🔮 Posting philosopher quote (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY})`);
     success = await postTextOnly(true);
   } else {
     const useImage = shouldPostWithImage();
@@ -429,13 +432,14 @@ async function attemptPost(): Promise<void> {
         success = await postTextOnly();
       }
     } else {
-      console.log(`📝 Posting WITHOUT image (${postsInCurrentCycle + 1 - imagesInCurrentCycle}/${POSTS_PER_CYCLE - IMAGES_PER_CYCLE} text posts in cycle)`);
+      console.log(`📝 Posting WITHOUT image`);
       success = await postTextOnly();
     }
   }
+  
   if (success) {
     const imagePercentage = totalPosts > 0 ? (imagePosts / totalPosts * 100).toFixed(1) : '0.0';
-    console.log(`📊 Total: ${totalPosts} posts (${imagePosts} images [${imagePercentage}%], ${textPosts} text, ${instagramPosts} Instagram)`);
+    console.log(`📊 Total: ${totalPosts} posts (${imagePosts} images [${imagePercentage}%], ${textPosts} text, ${instagramPosts} Instagram, ${philosopherPosts} philosopher)`);
   }
 }
 
@@ -458,7 +462,7 @@ Stats:
 - Image Posts: ${imagePosts} (${imagePercentage}%)
 - Text Posts: ${textPosts}
 - Instagram Posts: ${instagramPosts}
-- Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${philosopherPosts} philosopher posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
+- Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY } philosopher posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
 
 Timing:
 - Last post: ${minutesSincePost} minutes ago
