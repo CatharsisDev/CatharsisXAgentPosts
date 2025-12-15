@@ -22,9 +22,9 @@ const imageHostPlugin = new ImageHostPlugin({
 });
 
 // Configuration
-const POSTS_PER_DAY = 5;
+const POSTS_PER_DAY = 8;
 const POST_INTERVAL = (24 * 60 * 60 * 1000) / POSTS_PER_DAY;
-const POSTS_PER_CYCLE = 5;
+const POSTS_PER_CYCLE = 8;
 const IMAGES_PER_CYCLE = 1;
 const INSTAGRAM_MAX_RETRIES = 2;
 
@@ -71,6 +71,37 @@ let totalPosts = 0;
 let imagePosts = 0;
 let textPosts = 0;
 let instagramPosts = 0;
+let philosopherPosts = 0;
+// List of philosophers for quote selection
+const PHILOSOPHERS = [
+  "Socrates",
+  "Plato",
+  "Aristotle",
+  "Marcus Aurelius",
+  "Seneca",
+  "Epictetus",
+  "Confucius",
+  "Laozi",
+  "Diogenes",
+  "Heraclitus",
+  "Zeno of Citium",
+  "Pythagoras",
+  "Plotinus",
+  "Hypatia",
+  "Simone Weil",
+  "Immanuel Kant",
+  "Friedrich Nietzsche",
+  "Baruch Spinoza",
+  "David Hume",
+  "John Stuart Mill",
+  "Hannah Arendt",
+  "Simone de Beauvoir",
+  "Ludwig Wittgenstein",
+  "Jean-Paul Sartre",
+  "Albert Camus",
+  "Blaise Pascal"
+];
+const PHILOSOPHER_QUOTES_PER_DAY = 4;
 
 const STATE_FILE = '/app/data/poster_state.json';
 
@@ -89,7 +120,8 @@ function saveState() {
       textPosts,
       instagramPosts,
       lastPostTime,
-      currentSceneIndex
+      currentSceneIndex,
+      philosopherPosts
     }, null, 2));
     
     console.log('💾 State saved');
@@ -110,6 +142,7 @@ function loadState() {
       instagramPosts = state.instagramPosts || 0;
       lastPostTime = state.lastPostTime || 0;
       currentSceneIndex = state.currentSceneIndex || 0;
+      philosopherPosts = state.philosopherPosts || 0;
       
       console.log('✅ State loaded:', {
         totalPosts,
@@ -117,7 +150,8 @@ function loadState() {
         textPosts,
         instagramPosts,
         postsInCycle: postsInCurrentCycle,
-        imagesInCycle: imagesInCurrentCycle
+        imagesInCycle: imagesInCurrentCycle,
+        philosopherPosts
       });
     }
   } catch (error) {
@@ -151,6 +185,7 @@ function shouldPostWithImage(): boolean {
   if (postsInCurrentCycle >= POSTS_PER_CYCLE) {
     postsInCurrentCycle = 0;
     imagesInCurrentCycle = 0;
+    philosopherPosts = 0;
     console.log("📊 New cycle started");
     saveState();
   }
@@ -166,25 +201,27 @@ function shouldPostWithImage(): boolean {
   return useImage;
 }
 
-async function postTextOnly(): Promise<boolean> {
-  const topic = getNextWisdomTopic();
-  console.log(`📝 Creating text post about: ${topic}`);
-  
+async function postTextOnly(isPhilosopherQuote: boolean = false): Promise<boolean> {
+  let topic = "";
+  let promptContent = "";
+  let isPhilosopher = isPhilosopherQuote;
+  let philosopherName = "";
+  if (isPhilosopher) {
+    // Pick a random philosopher
+    philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
+    console.log(`📝 Creating PHILOSOPHER QUOTE post (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY}) from: ${philosopherName}`);
+    promptContent = `Output ONLY a single authentic philosophical quote.
+No attribution line.
+No explanation.
+No emojis.
+No hashtags.
+The quote must be from ${philosopherName}.`;
+  } else {
+    topic = getNextWisdomTopic();
+    console.log(`📝 Creating text post about: ${topic}`);
+    promptContent = `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags.`;
+  }
   try {
-    let promptContent = '';
-    
-    // Special handling for philosopher quotes
-    if (topic.toLowerCase().includes('philosopher') || topic.toLowerCase().includes('quotes')) {
-      promptContent = `Share a profound quote from an ancient philosopher (Socrates, Plato, Aristotle, Marcus Aurelius, Seneca, Epictetus, Confucius, Laozi).
-
-Format:
-"[exact quote]" - [Philosopher name]
-
-One brief sentence relating it to modern life. No hashtags.`;
-    } else {
-      promptContent = `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags.`;
-    }
-    
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       max_tokens: 150,
@@ -193,22 +230,21 @@ One brief sentence relating it to modern life. No hashtags.`;
         content: promptContent
       }]
     });
-    
     const tweetText = response.choices[0].message.content?.trim() || '';
     console.log("Generated text:", tweetText);
-    
     if (!tweetText || tweetText.length < 10) {
       console.log("❌ Failed to generate tweet text");
       return false;
     }
-    
     const result = await twitterClient.v2.tweet(tweetText);
     console.log("✅ Tweet posted! ID:", result.data.id);
-    
     lastPostTime = Date.now();
     totalPosts++;
     textPosts++;
     postsInCurrentCycle++;
+    if (isPhilosopher) {
+      philosopherPosts++;
+    }
     saveState();
     return true;
   } catch (error: any) {
@@ -370,31 +406,31 @@ Write a single detailed sentence describing this exact scene in watercolor style
 async function attemptPost(): Promise<void> {
   const now = Date.now();
   const timeSinceLastPost = now - lastPostTime;
-  
   if (timeSinceLastPost < POST_INTERVAL) {
     const minutesRemaining = Math.round((POST_INTERVAL - timeSinceLastPost) / 60000);
     console.log(`⏰ Next post in ${minutesRemaining} minutes`);
     return;
   }
-  
   console.log("📢 Time to post!");
-  
-  const useImage = shouldPostWithImage();
   let success = false;
-  
-  if (useImage) {
-    console.log(`🎨 Posting WITH image (${imagesInCurrentCycle + 1}/${IMAGES_PER_CYCLE} in cycle)`);
-    success = await postWithImage();
-    
-    if (!success) {
-      console.log("⚠️ Image post failed, trying text-only...");
+  // If not yet reached philosopher quote quota, force philosopher quote (no image)
+  if (philosopherPosts < PHILOSOPHER_QUOTES_PER_DAY) {
+    console.log(`🔮 Forcing philosopher quote post (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY})`);
+    success = await postTextOnly(true);
+  } else {
+    const useImage = shouldPostWithImage();
+    if (useImage) {
+      console.log(`🎨 Posting WITH image (${imagesInCurrentCycle + 1}/${IMAGES_PER_CYCLE} in cycle)`);
+      success = await postWithImage();
+      if (!success) {
+        console.log("⚠️ Image post failed, trying text-only...");
+        success = await postTextOnly();
+      }
+    } else {
+      console.log(`📝 Posting WITHOUT image (${postsInCurrentCycle + 1 - imagesInCurrentCycle}/${POSTS_PER_CYCLE - IMAGES_PER_CYCLE} text posts in cycle)`);
       success = await postTextOnly();
     }
-  } else {
-    console.log(`📝 Posting WITHOUT image (${postsInCurrentCycle + 1 - imagesInCurrentCycle}/${POSTS_PER_CYCLE - IMAGES_PER_CYCLE} text posts in cycle)`);
-    success = await postTextOnly();
   }
-  
   if (success) {
     const imagePercentage = totalPosts > 0 ? (imagePosts / totalPosts * 100).toFixed(1) : '0.0';
     console.log(`📊 Total: ${totalPosts} posts (${imagePosts} images [${imagePercentage}%], ${textPosts} text, ${instagramPosts} Instagram)`);
@@ -429,18 +465,18 @@ Timing:
     return;
   }
   
-  if (request.url === '/post-text') {
-    postTextOnly()
-      .then(success => {
-        response.writeHead(success ? 200 : 500, {'Content-Type': 'text/plain'});
-        response.end(success ? 'Text post successful' : 'Text post failed');
-      })
-      .catch(err => {
-        response.writeHead(500, {'Content-Type': 'text/plain'});
-        response.end('Error: ' + err.message);
-      });
-    return;
-  }
+if (request.url === '/post-text') {
+  postTextOnly()
+    .then(success => {
+      response.writeHead(success ? 200 : 500, {'Content-Type': 'text/plain'});
+      response.end(success ? 'Text post successful' : 'Text post failed');
+    })
+    .catch(err => {
+      response.writeHead(500, {'Content-Type': 'text/plain'});
+      response.end('Error: ' + err.message);
+    });
+  return;
+}
   
   if (request.url === '/post-image') {
     postWithImage()
