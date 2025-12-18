@@ -1,7 +1,7 @@
 import { wisdom_agent } from './agent';
-import * as http from 'http';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as http from 'node:http';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import OpenAI from 'openai';
 import { TwitterApi } from '@virtuals-protocol/game-twitter-node';
 import { ImageHostPlugin } from './plugins/imageHostPlugin';
@@ -103,6 +103,7 @@ let imagePosts = 0;
 let textPosts = 0;
 let instagramPosts = 0;
 let philosopherPosts = 0;
+let postedQuotes: Set<string> = new Set();
 
 const STATE_FILE = '/app/data/poster_state.json';
 
@@ -122,7 +123,8 @@ function saveState() {
       instagramPosts,
       lastPostTime,
       currentSceneIndex,
-      philosopherPosts
+      philosopherPosts,
+      postedQuotes: Array.from(postedQuotes)
     }, null, 2));
     
     console.log('💾 State saved');
@@ -144,6 +146,7 @@ function loadState() {
       lastPostTime = state.lastPostTime || 0;
       currentSceneIndex = state.currentSceneIndex || 0;
       philosopherPosts = state.philosopherPosts || 0;
+      postedQuotes = new Set(state.postedQuotes || []);
       
       console.log('✅ State loaded:', {
         totalPosts,
@@ -152,7 +155,8 @@ function loadState() {
         instagramPosts,
         postsInCycle: postsInCurrentCycle,
         imagesInCycle: imagesInCurrentCycle,
-        philosopherPosts
+        philosopherPosts,
+        uniqueQuotes: postedQuotes.size
       });
     }
   } catch (error) {
@@ -201,6 +205,53 @@ function shouldPostWithImage(): boolean {
   return useImage;
 }
 
+function isValidPhilosopherQuote(text: string): boolean {
+  const lowerText = text.toLowerCase();
+  
+  // Check for invalid phrases
+  const invalidPhrases = [
+    "i'm sorry",
+    "i apologize",
+    "no surviving quotes",
+    "no known quotes",
+    "no recorded quotes",
+    "cannot find",
+    "unable to provide",
+    "don't have",
+    "not available"
+  ];
+  
+  for (const phrase of invalidPhrases) {
+    if (lowerText.includes(phrase)) {
+      console.log(`❌ Invalid quote detected: contains "${phrase}"`);
+      return false;
+    }
+  }
+  
+  // Must contain quotation marks
+  if (!text.includes('"')) {
+    console.log('❌ Invalid quote: missing quotation marks');
+    return false;
+  }
+  
+  // Must contain attribution (em dash or regular dash)
+  if (!text.includes('—') && !text.includes(' - ')) {
+    console.log('❌ Invalid quote: missing attribution');
+    return false;
+  }
+  
+  return true;
+}
+
+function normalizeQuote(text: string): string {
+  // Extract just the quote text for comparison (remove attribution)
+  const quoteMatch = text.match(/"([^"]+)"/);
+  if (quoteMatch) {
+    return quoteMatch[1].toLowerCase().trim();
+  }
+  return text.toLowerCase().trim();
+}
+
 async function postTextOnly(isPhilosopherQuote: boolean = false): Promise<boolean> {
   let topic = "";
   let promptContent = "";
@@ -208,57 +259,115 @@ async function postTextOnly(isPhilosopherQuote: boolean = false): Promise<boolea
   let philosopherName = "";
   
   if (isPhilosopher) {
-    // Pick a random philosopher
-    philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
-    console.log(`📝 Creating PHILOSOPHER QUOTE post (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY}) from: ${philosopherName}`);
-    promptContent = `Output a single authentic quote by ${philosopherName}.
+    // Try up to 3 times to get a valid, unique quote
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
+      console.log(`📝 Creating PHILOSOPHER QUOTE post (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY}) from: ${philosopherName} (attempt ${attempt}/3)`);
+      
+      promptContent = `Output a single authentic, well-known quote by ${philosopherName}.
 
 Format:
 "[quote text]"
 
 — ${philosopherName}
 
-Return ONLY the quote in quotes, followed by a line break and the attribution line. Nothing else. No commentary, no explanation.`;
+Return ONLY the quote in quotes, followed by a line break and the attribution line. Nothing else. No commentary, no explanation.
+
+IMPORTANT: Only provide actual historical quotes from ${philosopherName}. If you don't know a quote, do not make one up.`;
+      
+      try {
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o",
+          max_tokens: 150,
+          messages: [{
+            role: "user",
+            content: promptContent
+          }]
+        });
+        
+        const tweetText = response.choices[0].message.content?.trim() || '';
+        console.log("Generated text:", tweetText);
+        
+        if (!tweetText || tweetText.length < 10) {
+          console.log("❌ Failed to generate tweet text");
+          continue;
+        }
+        
+        // Validate the quote
+        if (!isValidPhilosopherQuote(tweetText)) {
+          console.log(`⚠️ Invalid quote on attempt ${attempt}, retrying...`);
+          continue;
+        }
+        
+        // Check for duplicates
+        const normalizedQuote = normalizeQuote(tweetText);
+        if (postedQuotes.has(normalizedQuote)) {
+          console.log(`⚠️ Duplicate quote detected on attempt ${attempt}, retrying...`);
+          continue;
+        }
+        
+        // Valid and unique quote - post it
+        const result = await twitterClient.v2.tweet(tweetText);
+        console.log("✅ Tweet posted! ID:", result.data.id);
+        
+        // Add to posted quotes set
+        postedQuotes.add(normalizedQuote);
+        
+        lastPostTime = Date.now();
+        totalPosts++;
+        textPosts++;
+        postsInCurrentCycle++;
+        philosopherPosts++;
+        saveState();
+        return true;
+        
+      } catch (error: any) {
+        console.error(`❌ Error on attempt ${attempt}:`, error.message);
+        if (attempt === 3) {
+          console.error("❌ All 3 attempts failed");
+          return false;
+        }
+      }
+    }
+    
+    return false;
   } else {
+    // Regular wisdom post
     topic = getNextWisdomTopic();
     console.log(`📝 Creating text post about: ${topic}`);
     promptContent = `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags.`;
-  }
-  
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      max_tokens: 150,
-      messages: [{
-        role: "user",
-        content: promptContent
-      }]
-    });
     
-    const tweetText = response.choices[0].message.content?.trim() || '';
-    
-    console.log("Generated text:", tweetText);
-    
-    if (!tweetText || tweetText.length < 10) {
-      console.log("❌ Failed to generate tweet text");
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        max_tokens: 150,
+        messages: [{
+          role: "user",
+          content: promptContent
+        }]
+      });
+      
+      const tweetText = response.choices[0].message.content?.trim() || '';
+      console.log("Generated text:", tweetText);
+      
+      if (!tweetText || tweetText.length < 10) {
+        console.log("❌ Failed to generate tweet text");
+        return false;
+      }
+      
+      const result = await twitterClient.v2.tweet(tweetText);
+      console.log("✅ Tweet posted! ID:", result.data.id);
+      
+      lastPostTime = Date.now();
+      totalPosts++;
+      textPosts++;
+      postsInCurrentCycle++;
+      saveState();
+      return true;
+    } catch (error: any) {
+      console.error("❌ Twitter API error:", error);
       return false;
     }
-    
-    const result = await twitterClient.v2.tweet(tweetText);
-    console.log("✅ Tweet posted! ID:", result.data.id);
-    
-    lastPostTime = Date.now();
-    totalPosts++;
-    textPosts++;
-    postsInCurrentCycle++;
-    if (isPhilosopher) {
-      philosopherPosts++;
-    }
-    saveState();
-    return true;
-  } catch (error: any) {
-    console.error("❌ Twitter API error:", error);
-    return false;
   }
 }
 
@@ -367,7 +476,6 @@ Write a single detailed sentence describing this exact scene in watercolor style
             try {
               if (attempt > 1) {
                 console.log(`🔄 Instagram retry attempt ${attempt}/${INSTAGRAM_MAX_RETRIES}...`);
-                // Wait 5 seconds between retries
                 await new Promise(resolve => setTimeout(resolve, 5000));
               }
               
@@ -477,6 +585,7 @@ Stats:
 - Text Posts: ${textPosts}
 - Instagram Posts: ${instagramPosts}
 - Philosopher Posts: ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY}
+- Unique Quotes: ${postedQuotes.size}
 - Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
 
 Timing:
