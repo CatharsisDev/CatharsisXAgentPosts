@@ -277,7 +277,7 @@ IMPORTANT: Only provide actual historical quotes from ${philosopherName}. If you
       
       try {
         const response = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: "gpt-5.2",
           max_tokens: 150,
           messages: [{
             role: "user",
@@ -339,7 +339,7 @@ IMPORTANT: Only provide actual historical quotes from ${philosopherName}. If you
     
     try {
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-5.2",
         max_tokens: 150,
         messages: [{
           role: "user",
@@ -381,7 +381,7 @@ async function postWithImage(): Promise<boolean> {
     
     // Generate image prompt with consistent style
     const imagePromptResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5.2",
       max_tokens: 200,
       messages: [{
         role: "user",
@@ -398,7 +398,7 @@ Write a single detailed sentence describing this exact scene in watercolor style
     
     // Generate tweet text
     const tweetResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5.2",
       max_tokens: 100,
       messages: [{
         role: "user",
