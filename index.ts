@@ -278,7 +278,7 @@ IMPORTANT: Only provide actual historical quotes from ${philosopherName}. If you
       try {
         const response = await openai.chat.completions.create({
           model: "gpt-5.2",
-          max_tokens: 150,
+          max_completion_tokens: 150,
           messages: [{
             role: "user",
             content: promptContent
