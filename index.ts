@@ -28,6 +28,7 @@ const POSTS_PER_CYCLE = 8;
 const IMAGES_PER_CYCLE = 1;
 const INSTAGRAM_MAX_RETRIES = 2;
 const PHILOSOPHER_QUOTES_PER_DAY = 4;
+const PHILOSOPHER_BIO_POSTS_PER_DAY = 1;
 
 // Consistent watercolor style
 const WATERCOLOR_STYLE = `Traditional watercolor painting with these exact characteristics:
@@ -103,6 +104,7 @@ let imagePosts = 0;
 let textPosts = 0;
 let instagramPosts = 0;
 let philosopherPosts = 0;
+let philosopherBioPosts = 0;
 let postedQuotes: Set<string> = new Set();
 
 const STATE_FILE = '/app/data/poster_state.json';
@@ -124,6 +126,7 @@ function saveState() {
       lastPostTime,
       currentSceneIndex,
       philosopherPosts,
+      philosopherBioPosts,
       postedQuotes: Array.from(postedQuotes)
     }, null, 2));
     
@@ -146,6 +149,7 @@ function loadState() {
       lastPostTime = state.lastPostTime || 0;
       currentSceneIndex = state.currentSceneIndex || 0;
       philosopherPosts = state.philosopherPosts || 0;
+      philosopherBioPosts = state.philosopherBioPosts || 0;
       postedQuotes = new Set(state.postedQuotes || []);
       
       console.log('✅ State loaded:', {
@@ -156,6 +160,7 @@ function loadState() {
         postsInCycle: postsInCurrentCycle,
         imagesInCycle: imagesInCurrentCycle,
         philosopherPosts,
+        philosopherBioPosts,
         uniqueQuotes: postedQuotes.size
       });
     }
@@ -185,11 +190,31 @@ function getNextWisdomTopic(): string {
   return topic;
 }
 
+const PHILOSOPHICAL_TOPICS = [
+  "virtue vs pleasure",
+  "freedom and responsibility",
+  "ego and identity",
+  "meaning without certainty",
+  "discipline as self-respect",
+  "suffering and interpretation",
+  "truth-seeking vs approval",
+  "character built in private"
+];
+
+let currentPhilosophicalTopicIndex = 0;
+
+function getNextPhilosophicalTopic(): string {
+  const topic = PHILOSOPHICAL_TOPICS[currentPhilosophicalTopicIndex];
+  currentPhilosophicalTopicIndex = (currentPhilosophicalTopicIndex + 1) % PHILOSOPHICAL_TOPICS.length;
+  return topic;
+}
+
 function shouldPostWithImage(): boolean {
   if (postsInCurrentCycle >= POSTS_PER_CYCLE) {
     postsInCurrentCycle = 0;
     imagesInCurrentCycle = 0;
     philosopherPosts = 0;
+    philosopherBioPosts = 0;
     console.log("📊 New cycle started");
     saveState();
   }
@@ -203,6 +228,54 @@ function shouldPostWithImage(): boolean {
   }
   
   return useImage;
+}
+// Post a philosopher biography
+async function postPhilosopherBio(): Promise<boolean> {
+  const philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
+  console.log(`📚 Creating BIO post about: ${philosopherName}`);
+
+  const prompt = `Write a short chronological biographical summary of ${philosopherName}.
+
+Format:
+- 2-4 short sentences
+- Chronological order
+- Mention what they are known for and their main contribution
+- No hashtags
+- Neutral, intellectual tone
+- No emojis
+
+Return only the text.`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 200,
+      messages: [{ role: "user", content: prompt }]
+    });
+
+    const tweetText = response.choices[0].message.content?.trim() || '';
+
+    if (!tweetText || tweetText.length < 20) {
+      console.log("❌ Failed to generate bio text");
+      return false;
+    }
+
+    const result = await twitterClient.v2.tweet(tweetText);
+    console.log("✅ Bio tweet posted! ID:", result.data.id);
+
+    philosopherBioPosts++;
+    totalPosts++;
+    textPosts++;
+    postsInCurrentCycle++;
+    lastPostTime = Date.now();
+    saveState();
+
+    return true;
+
+  } catch (error: any) {
+    console.error("❌ Bio post error:", error.message);
+    return false;
+  }
 }
 
 function isValidPhilosopherQuote(text: string): boolean {
@@ -372,8 +445,8 @@ Return ONLY the formatted result. No commentary. No explanations.`;
   }
 }
 
-async function postWithImage(): Promise<boolean> {
-  const topic = getNextWisdomTopic();
+async function postWithImage(topicOverride?: string): Promise<boolean> {
+  const topic = topicOverride ?? getNextPhilosophicalTopic();
   console.log(`🖼️ Creating image post about: ${topic}`);
   
   try {
@@ -521,6 +594,49 @@ Write a single detailed sentence describing this exact scene in watercolor style
   }
 }
 
+async function postPhilosophicalInsight(topicOverride?: string): Promise<boolean> {
+  const topic = topicOverride ?? getNextPhilosophicalTopic();
+  console.log(`🧠 Creating philosophical post about: ${topic}`);
+
+  const promptContent = `Write a philosophical tweet about: ${topic}.
+
+Rules:
+- 1-2 sentences
+- reflective and intellectually grounded
+- no hashtags
+- no emojis
+- do NOT quote any philosopher
+Return only the tweet text.`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 150,
+      messages: [{ role: "user", content: promptContent }]
+    });
+
+    const tweetText = response.choices[0].message.content?.trim() || '';
+
+    if (!tweetText || tweetText.length < 10) {
+      console.log("❌ Failed to generate philosophical text");
+      return false;
+    }
+
+    const result = await twitterClient.v2.tweet(tweetText);
+    console.log("✅ Philosophical tweet posted! ID:", result.data.id);
+
+    lastPostTime = Date.now();
+    totalPosts++;
+    textPosts++;
+    postsInCurrentCycle++;
+    saveState();
+    return true;
+  } catch (error: any) {
+    console.error("❌ Philosophical post error:", error.message);
+    return false;
+  }
+}
+
 async function attemptPost(): Promise<void> {
   const now = Date.now();
   const timeSinceLastPost = now - lastPostTime;
@@ -534,35 +650,54 @@ async function attemptPost(): Promise<void> {
   console.log("📢 Time to post!");
   let success = false;
   
-  // Calculate probability to ensure 4 philosopher quotes per cycle
-  const postsRemaining = POSTS_PER_CYCLE - postsInCurrentCycle;
-  const philosopherQuotesNeeded = PHILOSOPHER_QUOTES_PER_DAY - philosopherPosts;
-  const philosopherProbability = philosopherQuotesNeeded / postsRemaining;
-  
-  const shouldPostPhilosopher = philosopherPosts < PHILOSOPHER_QUOTES_PER_DAY && 
-                                 Math.random() < philosopherProbability;
-  
-  if (shouldPostPhilosopher) {
-    console.log(`🔮 Posting philosopher quote (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY})`);
+  // Weighted distribution: 25% quote, 50% bio, 25% other philosophical
+  const roll = Math.random();
+
+  if (roll < 0.25) {
+    console.log(`🔮 Posting philosopher quote`);
     success = await postTextOnly(true);
+  } else if (roll < 0.75) {
+    console.log(`📚 Posting philosopher biography`);
+    success = await postPhilosopherBio();
   } else {
+    // Split remaining 25% evenly between wisdom and philosophical topics
+    const useWisdomTopic = Math.random() < 0.5;
     const useImage = shouldPostWithImage();
-    if (useImage) {
-      console.log(`🎨 Posting WITH image (${imagesInCurrentCycle + 1}/${IMAGES_PER_CYCLE} in cycle)`);
-      success = await postWithImage();
-      if (!success) {
-        console.log("⚠️ Image post failed, trying text-only...");
-        success = await postTextOnly();
+
+    if (useWisdomTopic) {
+      const topic = getNextWisdomTopic();
+      console.log(`📘 Posting wisdom topic: ${topic}`);
+
+      if (useImage) {
+        console.log(`🎨 Posting wisdom content WITH image`);
+        success = await postWithImage(topic);
+        if (!success) {
+          console.log("⚠️ Image post failed, trying text-only wisdom...");
+          success = await postTextOnly(false);
+        }
+      } else {
+        success = await postTextOnly(false);
       }
     } else {
-      console.log(`📝 Posting WITHOUT image`);
-      success = await postTextOnly();
+      const topic = getNextPhilosophicalTopic();
+      console.log(`🧠 Posting philosophical topic: ${topic}`);
+
+      if (useImage) {
+        console.log(`🎨 Posting philosophical content WITH image`);
+        success = await postWithImage(topic);
+        if (!success) {
+          console.log("⚠️ Image post failed, trying text-only philosophical...");
+          success = await postPhilosophicalInsight(topic);
+        }
+      } else {
+        success = await postPhilosophicalInsight(topic);
+      }
     }
   }
   
   if (success) {
     const imagePercentage = totalPosts > 0 ? (imagePosts / totalPosts * 100).toFixed(1) : '0.0';
-    console.log(`📊 Total: ${totalPosts} posts (${imagePosts} images [${imagePercentage}%], ${textPosts} text, ${instagramPosts} Instagram, ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY} philosopher)`);
+    console.log(`📊 Total: ${totalPosts} posts (${imagePosts} images [${imagePercentage}%], ${textPosts} text, ${instagramPosts} Instagram, ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY} philosopher, ${philosopherBioPosts}/${PHILOSOPHER_BIO_POSTS_PER_DAY} bio)`);
   }
 }
 
@@ -586,6 +721,7 @@ Stats:
 - Text Posts: ${textPosts}
 - Instagram Posts: ${instagramPosts}
 - Philosopher Posts: ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY}
+- Philosopher Bio Posts: ${philosopherBioPosts}/${PHILOSOPHER_BIO_POSTS_PER_DAY}
 - Unique Quotes: ${postedQuotes.size}
 - Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
 
