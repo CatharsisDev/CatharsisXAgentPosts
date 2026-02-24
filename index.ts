@@ -228,7 +228,6 @@ function isValidPhilosopherQuote(text: string): boolean {
     }
   }
   
-  // Must contain quotation marks
   if (!text.includes('"')) {
     console.log('❌ Invalid quote: missing quotation marks');
     return false;
@@ -244,7 +243,6 @@ function isValidPhilosopherQuote(text: string): boolean {
 }
 
 function normalizeQuote(text: string): string {
-  // Extract just the quote text for comparison (remove attribution)
   const quoteMatch = text.match(/"([^"]+)"/);
   if (quoteMatch) {
     return quoteMatch[1].toLowerCase().trim();
@@ -263,18 +261,21 @@ async function postTextOnly(isPhilosopherQuote: boolean = false): Promise<boolea
     for (let attempt = 1; attempt <= 3; attempt++) {
       philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
       console.log(`📝 Creating PHILOSOPHER QUOTE post (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY}) from: ${philosopherName} (attempt ${attempt}/3)`);
-      
-      promptContent = `Output a single authentic, well-known quote by ${philosopherName}.
 
-Format:
+      promptContent = `Output one short modern framing sentence (max 12 words) that connects the quote to a present-day personal growth struggle.
+
+Then output a single authentic, well-known quote by ${philosopherName}.
+
+Format strictly as:
+
+[framing sentence]
+
 "[quote text]"
 
 — ${philosopherName}
 
-Return ONLY the quote in quotes, followed by a line break and the attribution line. Nothing else. No commentary, no explanation.
+Return ONLY the formatted result. No commentary. No explanations.`;
 
-IMPORTANT: Only provide actual historical quotes from ${philosopherName}. If you don't know a quote, do not make one up.`;
-      
       try {
         const response = await openai.chat.completions.create({
           model: "gpt-5.2",
@@ -284,35 +285,35 @@ IMPORTANT: Only provide actual historical quotes from ${philosopherName}. If you
             content: promptContent
           }]
         });
-        
+
         const tweetText = response.choices[0].message.content?.trim() || '';
         console.log("Generated text:", tweetText);
-        
+
         if (!tweetText || tweetText.length < 10) {
           console.log("❌ Failed to generate tweet text");
           continue;
         }
-        
+
         // Validate the quote
         if (!isValidPhilosopherQuote(tweetText)) {
           console.log(`⚠️ Invalid quote on attempt ${attempt}, retrying...`);
           continue;
         }
-        
+
         // Check for duplicates
         const normalizedQuote = normalizeQuote(tweetText);
         if (postedQuotes.has(normalizedQuote)) {
           console.log(`⚠️ Duplicate quote detected on attempt ${attempt}, retrying...`);
           continue;
         }
-        
+
         // Valid and unique quote - post it
         const result = await twitterClient.v2.tweet(tweetText);
         console.log("✅ Tweet posted! ID:", result.data.id);
-        
+
         // Add to posted quotes set
         postedQuotes.add(normalizedQuote);
-        
+
         lastPostTime = Date.now();
         totalPosts++;
         textPosts++;
@@ -320,7 +321,7 @@ IMPORTANT: Only provide actual historical quotes from ${philosopherName}. If you
         philosopherPosts++;
         saveState();
         return true;
-        
+
       } catch (error: any) {
         console.error(`❌ Error on attempt ${attempt}:`, error.message);
         if (attempt === 3) {
@@ -329,7 +330,7 @@ IMPORTANT: Only provide actual historical quotes from ${philosopherName}. If you
         }
       }
     }
-    
+
     return false;
   } else {
     // Regular wisdom post
