@@ -323,7 +323,7 @@ function normalizeQuote(text: string): string {
   return text.toLowerCase().trim();
 }
 
-async function postTextOnly(isPhilosopherQuote: boolean = false): Promise<boolean> {
+async function postTextOnly(isPhilosopherQuote: boolean = false, topicOverride?: string): Promise<boolean> {
   let topic = "";
   let promptContent = "";
   let isPhilosopher = isPhilosopherQuote;
@@ -407,7 +407,7 @@ Return ONLY the formatted result. No commentary. No explanations.`;
     return false;
   } else {
     // Regular wisdom post
-    topic = getNextWisdomTopic();
+    topic = topicOverride ?? getNextWisdomTopic();
     console.log(`📝 Creating text post about: ${topic}`);
     promptContent = `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags.`;
     
@@ -649,52 +649,56 @@ async function attemptPost(): Promise<void> {
   
   console.log("📢 Time to post!");
   let success = false;
-  
-  // Weighted distribution: 25% quote, 50% bio, 25% other philosophical
-  const roll = Math.random();
 
-  if (roll < 0.25) {
-    console.log(`🔮 Posting philosopher quote`);
-    success = await postTextOnly(true);
-  } else if (roll < 0.75) {
-    console.log(`📚 Posting philosopher biography`);
-    success = await postPhilosopherBio();
-  } else {
-    // Split remaining 25% evenly between wisdom and philosophical topics
+  // Global image scheduling: enforce exactly 1 image per cycle
+  const useImage = shouldPostWithImage();
+
+  if (useImage) {
     const useWisdomTopic = Math.random() < 0.5;
-    const useImage = shouldPostWithImage();
 
     if (useWisdomTopic) {
       const topic = getNextWisdomTopic();
-      console.log(`📘 Posting wisdom topic: ${topic}`);
-
-      if (useImage) {
-        console.log(`🎨 Posting wisdom content WITH image`);
-        success = await postWithImage(topic);
-        if (!success) {
-          console.log("⚠️ Image post failed, trying text-only wisdom...");
-          success = await postTextOnly(false);
-        }
-      } else {
-        success = await postTextOnly(false);
+      console.log(`🎨 Posting DAILY IMAGE (wisdom): ${topic}`);
+      success = await postWithImage(topic);
+      if (!success) {
+        console.log("⚠️ Image post failed, trying text-only wisdom...");
+        success = await postTextOnly(false, topic);
       }
     } else {
       const topic = getNextPhilosophicalTopic();
-      console.log(`🧠 Posting philosophical topic: ${topic}`);
+      console.log(`🎨 Posting DAILY IMAGE (philosophical): ${topic}`);
+      success = await postWithImage(topic);
+      if (!success) {
+        console.log("⚠️ Image post failed, trying text-only philosophical...");
+        success = await postPhilosophicalInsight(topic);
+      }
+    }
 
-      if (useImage) {
-        console.log(`🎨 Posting philosophical content WITH image`);
-        success = await postWithImage(topic);
-        if (!success) {
-          console.log("⚠️ Image post failed, trying text-only philosophical...");
-          success = await postPhilosophicalInsight(topic);
-        }
+  } else {
+    // Non-image posts follow weighted distribution
+    const roll = Math.random();
+
+    if (roll < 0.25) {
+      console.log(`🔮 Posting philosopher quote`);
+      success = await postTextOnly(true);
+    } else if (roll < 0.75) {
+      console.log(`📚 Posting philosopher biography`);
+      success = await postPhilosopherBio();
+    } else {
+      const useWisdomTopic = Math.random() < 0.5;
+
+      if (useWisdomTopic) {
+        const topic = getNextWisdomTopic();
+        console.log(`📘 Posting wisdom topic: ${topic}`);
+        success = await postTextOnly(false, topic);
       } else {
+        const topic = getNextPhilosophicalTopic();
+        console.log(`🧠 Posting philosophical topic: ${topic}`);
         success = await postPhilosophicalInsight(topic);
       }
     }
   }
-  
+
   if (success) {
     const imagePercentage = totalPosts > 0 ? (imagePosts / totalPosts * 100).toFixed(1) : '0.0';
     console.log(`📊 Total: ${totalPosts} posts (${imagePosts} images [${imagePercentage}%], ${textPosts} text, ${instagramPosts} Instagram, ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY} philosopher, ${philosopherBioPosts}/${PHILOSOPHER_BIO_POSTS_PER_DAY} bio)`);
