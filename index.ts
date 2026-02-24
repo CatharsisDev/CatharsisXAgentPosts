@@ -229,36 +229,49 @@ function shouldPostWithImage(): boolean {
   
   return useImage;
 }
+
+function truncateTweet(text: string, maxLength: number = 280): string {
+  if (text.length <= maxLength) return text;
+  console.log(`⚠️ Text too long (${text.length} chars), truncating to ${maxLength}...`);
+  return text.substring(0, maxLength - 3) + '...';
+}
+
 // Post a philosopher biography
 async function postPhilosopherBio(): Promise<boolean> {
   const philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
   console.log(`📚 Creating BIO post about: ${philosopherName}`);
 
-  const prompt = `Write a short chronological biographical summary of ${philosopherName}.
+  const prompt = `Write a biographical summary of ${philosopherName} in strictly 1-2 sentences.
 
-Format:
-- 2-4 short sentences
-- Chronological order
+Rules:
+- Hard limit: 240 characters total
 - Mention what they are known for and their main contribution
 - No hashtags
 - Neutral, intellectual tone
 - No emojis
 
-Return only the text.`;
+Return only the text, nothing else.`;
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-5.2",
-      max_completion_tokens: 200,
+      model: "gpt-4o",
+      max_completion_tokens: 100,
       messages: [{ role: "user", content: prompt }]
     });
 
-    const tweetText = response.choices[0].message.content?.trim() || '';
+    let tweetText = response.choices[0].message.content?.trim() || '';
 
     if (!tweetText || tweetText.length < 20) {
       console.log("❌ Failed to generate bio text");
       return false;
     }
+
+    // Log length before posting
+    console.log(`📏 Bio length: ${tweetText.length} chars`);
+    console.log(`📄 Bio text: ${tweetText}`);
+
+    // Enforce 280 char Twitter limit
+    tweetText = truncateTweet(tweetText);
 
     const result = await twitterClient.v2.tweet(tweetText);
     console.log("✅ Bio tweet posted! ID:", result.data.id);
@@ -274,6 +287,7 @@ Return only the text.`;
 
   } catch (error: any) {
     console.error("❌ Bio post error:", error.message);
+    if (error.data) console.error("   → API response:", JSON.stringify(error.data));
     return false;
   }
 }
@@ -281,7 +295,6 @@ Return only the text.`;
 function isValidPhilosopherQuote(text: string): boolean {
   const lowerText = text.toLowerCase();
   
-  // Check for invalid phrases
   const invalidPhrases = [
     "i'm sorry",
     "i apologize",
@@ -306,7 +319,6 @@ function isValidPhilosopherQuote(text: string): boolean {
     return false;
   }
   
-  // Must contain attribution (em dash or regular dash)
   if (!text.includes('—') && !text.includes(' - ')) {
     console.log('❌ Invalid quote: missing attribution');
     return false;
@@ -330,7 +342,6 @@ async function postTextOnly(isPhilosopherQuote: boolean = false, topicOverride?:
   let philosopherName = "";
   
   if (isPhilosopher) {
-    // Try up to 3 times to get a valid, unique quote
     for (let attempt = 1; attempt <= 3; attempt++) {
       philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
       console.log(`📝 Creating PHILOSOPHER QUOTE post (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY}) from: ${philosopherName} (attempt ${attempt}/3)`);
@@ -347,11 +358,12 @@ Format strictly as:
 
 — ${philosopherName}
 
+Important: The entire response must be under 260 characters total.
 Return ONLY the formatted result. No commentary. No explanations.`;
 
       try {
         const response = await openai.chat.completions.create({
-          model: "gpt-5.2",
+          model: "gpt-4o",
           max_completion_tokens: 150,
           messages: [{
             role: "user",
@@ -359,7 +371,8 @@ Return ONLY the formatted result. No commentary. No explanations.`;
           }]
         });
 
-        const tweetText = response.choices[0].message.content?.trim() || '';
+        let tweetText = response.choices[0].message.content?.trim() || '';
+        console.log(`📏 Quote length: ${tweetText.length} chars`);
         console.log("Generated text:", tweetText);
 
         if (!tweetText || tweetText.length < 10) {
@@ -367,26 +380,24 @@ Return ONLY the formatted result. No commentary. No explanations.`;
           continue;
         }
 
-        // Validate the quote
         if (!isValidPhilosopherQuote(tweetText)) {
           console.log(`⚠️ Invalid quote on attempt ${attempt}, retrying...`);
           continue;
         }
 
-        // Check for duplicates
         const normalizedQuote = normalizeQuote(tweetText);
         if (postedQuotes.has(normalizedQuote)) {
           console.log(`⚠️ Duplicate quote detected on attempt ${attempt}, retrying...`);
           continue;
         }
 
-        // Valid and unique quote - post it
+        // Enforce limit before posting
+        tweetText = truncateTweet(tweetText);
+
         const result = await twitterClient.v2.tweet(tweetText);
         console.log("✅ Tweet posted! ID:", result.data.id);
 
-        // Add to posted quotes set
         postedQuotes.add(normalizedQuote);
-
         lastPostTime = Date.now();
         totalPosts++;
         textPosts++;
@@ -397,6 +408,7 @@ Return ONLY the formatted result. No commentary. No explanations.`;
 
       } catch (error: any) {
         console.error(`❌ Error on attempt ${attempt}:`, error.message);
+        if (error.data) console.error("   → API response:", JSON.stringify(error.data));
         if (attempt === 3) {
           console.error("❌ All 3 attempts failed");
           return false;
@@ -406,14 +418,13 @@ Return ONLY the formatted result. No commentary. No explanations.`;
 
     return false;
   } else {
-    // Regular wisdom post
     topic = topicOverride ?? getNextWisdomTopic();
     console.log(`📝 Creating text post about: ${topic}`);
-    promptContent = `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags.`;
+    promptContent = `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags. Stay under 260 characters.`;
     
     try {
       const response = await openai.chat.completions.create({
-        model: "gpt-5.2",
+        model: "gpt-4o",
         max_completion_tokens: 150,
         messages: [{
           role: "user",
@@ -421,13 +432,16 @@ Return ONLY the formatted result. No commentary. No explanations.`;
         }]
       });
       
-      const tweetText = response.choices[0].message.content?.trim() || '';
+      let tweetText = response.choices[0].message.content?.trim() || '';
+      console.log(`📏 Text length: ${tweetText.length} chars`);
       console.log("Generated text:", tweetText);
       
       if (!tweetText || tweetText.length < 10) {
         console.log("❌ Failed to generate tweet text");
         return false;
       }
+
+      tweetText = truncateTweet(tweetText);
       
       const result = await twitterClient.v2.tweet(tweetText);
       console.log("✅ Tweet posted! ID:", result.data.id);
@@ -439,7 +453,8 @@ Return ONLY the formatted result. No commentary. No explanations.`;
       saveState();
       return true;
     } catch (error: any) {
-      console.error("❌ Twitter API error:", error);
+      console.error("❌ Twitter API error:", error.message);
+      if (error.data) console.error("   → API response:", JSON.stringify(error.data));
       return false;
     }
   }
@@ -450,12 +465,10 @@ async function postWithImage(topicOverride?: string): Promise<boolean> {
   console.log(`🖼️ Creating image post about: ${topic}`);
   
   try {
-    // Get next scene for variety
     const sceneDescription = getNextScene();
     
-    // Generate image prompt with consistent style
     const imagePromptResponse = await openai.chat.completions.create({
-      model: "gpt-5.2",
+      model: "gpt-4o",
       max_completion_tokens: 200,
       messages: [{
         role: "user",
@@ -470,25 +483,26 @@ Write a single detailed sentence describing this exact scene in watercolor style
     const imagePrompt = imagePromptResponse.choices[0].message.content?.trim() || 'peaceful watercolor interior scene with window light';
     console.log("Image prompt:", imagePrompt);
     
-    // Generate tweet text
     const tweetResponse = await openai.chat.completions.create({
-      model: "gpt-5.2",
+      model: "gpt-4o",
       max_completion_tokens: 100,
       messages: [{
         role: "user",
-        content: `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags.`
+        content: `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags. Stay under 260 characters.`
       }]
     });
     
-    const tweetText = tweetResponse.choices[0].message.content?.trim() || '';
+    let tweetText = tweetResponse.choices[0].message.content?.trim() || '';
+    console.log(`📏 Image tweet length: ${tweetText.length} chars`);
     console.log("Generated text:", tweetText);
     
     if (!tweetText || tweetText.length < 10) {
       console.log("❌ Failed to generate tweet text");
       return false;
     }
+
+    tweetText = truncateTweet(tweetText);
     
-    // Generate image with DALL-E 3
     console.log("🎨 Generating image with DALL-E 3...");
     const imageResponse = await openai.images.generate({
       model: "dall-e-3",
@@ -505,7 +519,6 @@ Write a single detailed sentence describing this exact scene in watercolor style
 
     const imageUrl = imageResponse.data[0].url;
     
-    // Post to Twitter first
     const mediaWorker = wisdom_agent.workers.find(w => w.id === "twitter_media_worker");
     if (!mediaWorker) {
       console.log("❌ Media worker not found");
@@ -523,16 +536,13 @@ Write a single detailed sentence describing this exact scene in watercolor style
     
     console.log("✅ Twitter post successful!");
     
-    // Now post to Instagram with retry logic
     try {
       console.log("📸 Preparing Instagram post...");
       
-      // Download image as buffer
       const imageBufferResponse = await fetch(imageUrl);
       const imageArrayBuffer = await imageBufferResponse.arrayBuffer();
       const imageBuffer = Buffer.from(imageArrayBuffer);
       
-      // Upload to ImgBB
       console.log("🔗 Uploading to image host...");
       const uploadResult = await imageHostPlugin.uploadImage(imageBuffer, `post_${Date.now()}`);
       
@@ -541,7 +551,6 @@ Write a single detailed sentence describing this exact scene in watercolor style
       } else {
         console.log("✅ Image hosted at:", uploadResult.url);
         
-        // Post to Instagram with retry
         const instagramWorker = wisdom_agent.workers.find(w => w.id === "instagram_worker");
         if (instagramWorker) {
           let instagramSuccess = false;
@@ -590,6 +599,7 @@ Write a single detailed sentence describing this exact scene in watercolor style
     return true;
   } catch (error: any) {
     console.error("❌ Image post error:", error.message);
+    if (error.data) console.error("   → API response:", JSON.stringify(error.data));
     return false;
   }
 }
@@ -606,21 +616,26 @@ Rules:
 - no hashtags
 - no emojis
 - do NOT quote any philosopher
+- stay under 260 characters
 Return only the tweet text.`;
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-5.2",
+      model: "gpt-4o",
       max_completion_tokens: 150,
       messages: [{ role: "user", content: promptContent }]
     });
 
-    const tweetText = response.choices[0].message.content?.trim() || '';
+    let tweetText = response.choices[0].message.content?.trim() || '';
+    console.log(`📏 Philosophical tweet length: ${tweetText.length} chars`);
+    console.log("Generated text:", tweetText);
 
     if (!tweetText || tweetText.length < 10) {
       console.log("❌ Failed to generate philosophical text");
       return false;
     }
+
+    tweetText = truncateTweet(tweetText);
 
     const result = await twitterClient.v2.tweet(tweetText);
     console.log("✅ Philosophical tweet posted! ID:", result.data.id);
@@ -633,6 +648,7 @@ Return only the tweet text.`;
     return true;
   } catch (error: any) {
     console.error("❌ Philosophical post error:", error.message);
+    if (error.data) console.error("   → API response:", JSON.stringify(error.data));
     return false;
   }
 }
@@ -650,7 +666,6 @@ async function attemptPost(): Promise<void> {
   console.log("📢 Time to post!");
   let success = false;
 
-  // Global image scheduling: enforce exactly 1 image per cycle
   const useImage = shouldPostWithImage();
 
   if (useImage) {
@@ -675,7 +690,6 @@ async function attemptPost(): Promise<void> {
     }
 
   } else {
-    // Non-image posts follow weighted distribution
     const roll = Math.random();
 
     if (roll < 0.25) {
@@ -754,6 +768,19 @@ Timing:
       .then(success => {
         response.writeHead(success ? 200 : 500, {'Content-Type': 'text/plain'});
         response.end(success ? 'Image post successful' : 'Image post failed');
+      })
+      .catch(err => {
+        response.writeHead(500, {'Content-Type': 'text/plain'});
+        response.end('Error: ' + err.message);
+      });
+    return;
+  }
+
+  if (request.url === '/post-bio') {
+    postPhilosopherBio()
+      .then(success => {
+        response.writeHead(success ? 200 : 500, {'Content-Type': 'text/plain'});
+        response.end(success ? 'Bio post successful' : 'Bio post failed');
       })
       .catch(err => {
         response.writeHead(500, {'Content-Type': 'text/plain'});
