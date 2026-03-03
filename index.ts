@@ -244,7 +244,6 @@ async function postPhilosopherBio(): Promise<boolean> {
   const prompt = `Write a biographical summary of ${philosopherName} in strictly 1-2 sentences.
 
 Rules:
-- Hard limit: 240 characters total
 - Mention what they are known for and their main contribution
 - No hashtags
 - Neutral, intellectual tone
@@ -255,7 +254,7 @@ Return only the text, nothing else.`;
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      max_completion_tokens: 100,
+      max_completion_tokens: 400,
       messages: [{ role: "user", content: prompt }]
     });
 
@@ -269,9 +268,6 @@ Return only the text, nothing else.`;
     // Log length before posting
     console.log(`📏 Bio length: ${tweetText.length} chars`);
     console.log(`📄 Bio text: ${tweetText}`);
-
-    // Enforce 280 char Twitter limit
-    tweetText = truncateTweet(tweetText);
 
     const result = await twitterClient.v2.tweet(tweetText);
     console.log("✅ Bio tweet posted! ID:", result.data.id);
