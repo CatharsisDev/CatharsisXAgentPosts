@@ -241,19 +241,26 @@ async function postPhilosopherBio(): Promise<boolean> {
   const philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
   console.log(`📚 Creating BIO post about: ${philosopherName}`);
 
-  const prompt = `Write a biographical summary of ${philosopherName} in strictly 1-2 sentences.
+  const prompt = `Write a concise chronological mini-timeline of ${philosopherName}'s life/work.
 
-Rules:
-- Mention what they are known for and their main contribution
+Format rules (strict):
+- Use a numbered list like:
+  1) ...
+  2) ...
+  3) ...
+  ...
+- 4 to 7 lines total (each line very short)
+- Chronological order
+- Each line must be a concrete fact (study/work/major work/turning point/legacy)
+- Neutral tone; do NOT use slang; do NOT use the word "bro"
 - No hashtags
-- Neutral, intellectual tone
 - No emojis
 
-Return only the text, nothing else.`;
+Return only the numbered list text, nothing else.`;
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5.2",
       max_completion_tokens: 400,
       messages: [{ role: "user", content: prompt }]
     });
