@@ -230,10 +230,34 @@ function shouldPostWithImage(): boolean {
   return useImage;
 }
 
-function truncateTweet(text: string, maxLength: number = 280): string {
+function truncateTweet(text: string, maxLength: number = 25000): string {
   if (text.length <= maxLength) return text;
   console.log(`⚠️ Text too long (${text.length} chars), truncating to ${maxLength}...`);
   return text.substring(0, maxLength - 3) + '...';
+}
+
+function toUnicodeBold(input: string): string {
+  // Unicode Mathematical Bold (A–Z, a–z, 0–9)
+  const A = 'A'.charCodeAt(0);
+  const Z = 'Z'.charCodeAt(0);
+  const a = 'a'.charCodeAt(0);
+  const z = 'z'.charCodeAt(0);
+  const zero = '0'.charCodeAt(0);
+  const nine = '9'.charCodeAt(0);
+
+  const boldA = 0x1D400; // 𝐀
+  const bolda = 0x1D41A; // 𝐚
+  const bold0 = 0x1D7CE; // 𝟎
+
+  let out = '';
+  for (const ch of input) {
+    const code = ch.codePointAt(0)!;
+    if (code >= A && code <= Z) out += String.fromCodePoint(boldA + (code - A));
+    else if (code >= a && code <= z) out += String.fromCodePoint(bolda + (code - a));
+    else if (code >= zero && code <= nine) out += String.fromCodePoint(bold0 + (code - zero));
+    else out += ch;
+  }
+  return out;
 }
 
 // Post a philosopher biography
@@ -245,19 +269,19 @@ async function postPhilosopherBio(): Promise<boolean> {
 
 Output format (strict):
 - First line must be exactly: Be like ${philosopherName}.
-- Then a numbered list with 8 to 12 lines, each like:
-  1) Short milestone.
-  2) Short milestone.
+- Then 8 to 12 bullet lines, each starting with the character > followed by a space.
+  Example:
+  > Short milestone.
 
 Style requirements (strict):
 - NO dates, years, centuries, BCE/CE, or numeric time ranges. Do not write any years like 1724, 399 BCE, 450s, etc.
 - Do not start lines with dates. If you mention time at all, use words only (e.g., "early life", "later", "in exile", "near the end").
-- Each line must be a concrete milestone: origin/early life, education, turning point, major works, core idea, controversy, influence/legacy.
-- Keep each line short (ideally 8–14 words).
+- Each bullet must be a concrete milestone: origin/early life, education, turning point, major works, core idea, controversy, influence/legacy.
+- Keep each bullet short (ideally 8–14 words).
 - Neutral tone; no slang; never use the word "bro".
 - No hashtags. No emojis.
 
-Return only the first line + numbered list. Nothing else.`;
+Return only the first line + bullet list. Nothing else.`;
 
 try {
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -269,21 +293,52 @@ try {
 
     let tweetText = response.choices[0].message.content?.trim() || "";
 
+    // Enforce formatting: bold header + > bullets
+const lines = tweetText
+  .split(/\r?\n/)
+  .map(l => l.trim())
+  .filter(l => l.length > 0);
+
+const plainHeader = `Be like ${philosopherName}.`;
+
+if (lines.length === 0) lines.push(plainHeader);
+
+// Ensure header exists and is correct
+if (!lines[0].toLowerCase().startsWith('be like')) lines.unshift(plainHeader);
+else lines[0] = plainHeader;
+
+// Convert any numbered/dashed/bulleted lines to `> ` bullets
+for (let i = 1; i < lines.length; i++) {
+  let l = lines[i];
+  l = l.replace(/^\d+\)\s*/, '');   // 1) ...
+  l = l.replace(/^[-•]\s*/, '');    // - ... / • ...
+  l = l.replace(/^>\s*/, '');       // > ...
+  lines[i] = `> ${l}`;
+}
+
+// Bold the header visually (Unicode bold)
+lines[0] = toUnicodeBold(lines[0]);
+
+tweetText = lines.join('\n');
+
     if (!tweetText || tweetText.length < 40) {
       console.log(`❌ Bio attempt ${attempt}: generated text too short/empty`);
       continue;
     }
 
-    const hasHeader = tweetText.startsWith(`Be like ${philosopherName}.`);
+    const hasHeader = tweetText.startsWith(toUnicodeBold(`Be like ${philosopherName}.`));
     const hasDates =
       /\b\d{3,4}\b/.test(tweetText) ||               // 1724, 399, etc.
       /\b(bce|ce|bc|ad)\b/i.test(tweetText) ||       // BCE/CE/BC/AD
       /\b\d{2,4}s\b/.test(tweetText) ||              // 450s
       /\b\d+–\d+\b/.test(tweetText) ||               // 1740–1746
-      /\b\d+-\d+\b/.test(tweetText);                 // 1740-1746
+      /\b\d+-\d+\b/.test(tweetText); 
+      
+      const bulletLines = tweetText.split(/\r?\n/).slice(1).filter(l => l.trim().length > 0);
+const bulletsOk = bulletLines.length >= 6 && bulletLines.every(l => l.trim().startsWith('> '));// 1740-1746
 
     if (!hasHeader || hasDates) {
-      console.log(`⚠️ Bio attempt ${attempt}: invalid format (header=${hasHeader}, dates=${hasDates}).`);
+      console.log(`⚠️ Bio attempt ${attempt}: invalid format (header=${hasHeader}, dates=${hasDates}, bullets=${bulletsOk}).`);
       if (attempt === 1) {
         console.log("🔁 Regenerating bio once...");
         continue;
@@ -382,7 +437,7 @@ Format strictly as:
 
 — ${philosopherName}
 
-Important: The entire response must be under 260 characters total.
+Important: The entire response must be under 1000 characters total.
 Return ONLY the formatted result. No commentary. No explanations.`;
 
       try {
@@ -444,7 +499,7 @@ Return ONLY the formatted result. No commentary. No explanations.`;
   } else {
     topic = topicOverride ?? getNextWisdomTopic();
     console.log(`📝 Creating text post about: ${topic}`);
-    promptContent = `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags. Stay under 260 characters.`;
+    promptContent = `Write a tweet about: ${topic}. Practical advice, no hashtags. Stay under 500 characters.`;
     
     try {
       const response = await openai.chat.completions.create({
@@ -512,7 +567,7 @@ Write a single detailed sentence describing this exact scene in watercolor style
       max_completion_tokens: 100,
       messages: [{
         role: "user",
-        content: `Write a tweet about: ${topic}. 1-2 sentences, practical advice, no hashtags. Stay under 260 characters.`
+        content: `Write a tweet about: ${topic}. Practical advice, no hashtags. Stay under 500 characters.`
       }]
     });
     
@@ -640,7 +695,7 @@ Rules:
 - no hashtags
 - no emojis
 - do NOT quote any philosopher
-- stay under 260 characters
+- stay under 500 characters
 Return only the tweet text.`;
 
   try {
