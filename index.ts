@@ -241,38 +241,55 @@ async function postPhilosopherBio(): Promise<boolean> {
   const philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
   console.log(`📚 Creating BIO post about: ${philosopherName}`);
 
-  const prompt = `Write a concise chronological mini-timeline of ${philosopherName}'s life/work.
+  const prompt = `Create a "Be like" post about ${philosopherName} in a punchy milestone list.
 
-Format rules (strict):
-- Use a numbered list like:
-  1) ...
-  2) ...
-  3) ...
-  ...
-- 4 to 7 lines total (each line very short)
-- Chronological order
-- Each line must be a concrete fact (study/work/major work/turning point/legacy)
-- Neutral tone; do NOT use slang; do NOT use the word "bro"
-- No hashtags
-- No emojis
+Output format (strict):
+- First line must be exactly: Be like ${philosopherName}.
+- Then a numbered list with 8 to 12 lines, each like:
+  1) Short milestone.
+  2) Short milestone.
 
-Return only the numbered list text, nothing else.`;
+Style requirements (strict):
+- NO dates, years, centuries, BCE/CE, or numeric time ranges. Do not write any years like 1724, 399 BCE, 450s, etc.
+- Do not start lines with dates. If you mention time at all, use words only (e.g., "early life", "later", "in exile", "near the end").
+- Each line must be a concrete milestone: origin/early life, education, turning point, major works, core idea, controversy, influence/legacy.
+- Keep each line short (ideally 8–14 words).
+- Neutral tone; no slang; never use the word "bro".
+- No hashtags. No emojis.
 
-  try {
+Return only the first line + numbered list. Nothing else.`;
+
+try {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     const response = await openai.chat.completions.create({
       model: "gpt-5.2",
       max_completion_tokens: 400,
       messages: [{ role: "user", content: prompt }]
     });
 
-    let tweetText = response.choices[0].message.content?.trim() || '';
+    let tweetText = response.choices[0].message.content?.trim() || "";
 
-    if (!tweetText || tweetText.length < 20) {
-      console.log("❌ Failed to generate bio text");
-      return false;
+    if (!tweetText || tweetText.length < 40) {
+      console.log(`❌ Bio attempt ${attempt}: generated text too short/empty`);
+      continue;
     }
 
-    // Log length before posting
+    const hasHeader = tweetText.startsWith(`Be like ${philosopherName}.`);
+    const hasDates =
+      /\b\d{3,4}\b/.test(tweetText) ||               // 1724, 399, etc.
+      /\b(bce|ce|bc|ad)\b/i.test(tweetText) ||       // BCE/CE/BC/AD
+      /\b\d{2,4}s\b/.test(tweetText) ||              // 450s
+      /\b\d+–\d+\b/.test(tweetText) ||               // 1740–1746
+      /\b\d+-\d+\b/.test(tweetText);                 // 1740-1746
+
+    if (!hasHeader || hasDates) {
+      console.log(`⚠️ Bio attempt ${attempt}: invalid format (header=${hasHeader}, dates=${hasDates}).`);
+      if (attempt === 1) {
+        console.log("🔁 Regenerating bio once...");
+        continue;
+      }
+    }
+
     console.log(`📏 Bio length: ${tweetText.length} chars`);
     console.log(`📄 Bio text: ${tweetText}`);
 
@@ -287,12 +304,16 @@ Return only the numbered list text, nothing else.`;
     saveState();
 
     return true;
-
-  } catch (error: any) {
-    console.error("❌ Bio post error:", error.message);
-    if (error.data) console.error("   → API response:", JSON.stringify(error.data));
-    return false;
   }
+
+  console.log("❌ Bio generation failed validation after 2 attempts");
+  return false;
+
+} catch (error: any) {
+  console.error("❌ Bio post error:", error.message);
+  if (error.data) console.error("   → API response:", JSON.stringify(error.data));
+  return false;
+}
 }
 
 function isValidPhilosopherQuote(text: string): boolean {
