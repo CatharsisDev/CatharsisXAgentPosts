@@ -105,6 +105,7 @@ let textPosts = 0;
 let instagramPosts = 0;
 let philosopherPosts = 0;
 let philosopherBioPosts = 0;
+let lastContentType: 'quote' | 'bio' | 'wisdom' | 'philosophical' | null = null;
 let postedQuotes: Set<string> = new Set();
 
 const STATE_FILE = '/app/data/poster_state.json';
@@ -127,6 +128,7 @@ function saveState() {
       currentSceneIndex,
       philosopherPosts,
       philosopherBioPosts,
+      lastContentType,
       postedQuotes: Array.from(postedQuotes)
     }, null, 2));
     
@@ -150,6 +152,7 @@ function loadState() {
       currentSceneIndex = state.currentSceneIndex || 0;
       philosopherPosts = state.philosopherPosts || 0;
       philosopherBioPosts = state.philosopherBioPosts || 0;
+      lastContentType = state.lastContentType || null;
       postedQuotes = new Set(state.postedQuotes || []);
       
       console.log('✅ State loaded:', {
@@ -161,6 +164,7 @@ function loadState() {
         imagesInCycle: imagesInCurrentCycle,
         philosopherPosts,
         philosopherBioPosts,
+        lastContentType,
         uniqueQuotes: postedQuotes.size
       });
     }
@@ -753,42 +757,67 @@ async function attemptPost(): Promise<void> {
     if (useWisdomTopic) {
       const topic = getNextWisdomTopic();
       console.log(`🎨 Posting DAILY IMAGE (wisdom): ${topic}`);
-      success = await postWithImage(topic);
+          success = await postWithImage(topic);
       if (!success) {
         console.log("⚠️ Image post failed, trying text-only wisdom...");
         success = await postTextOnly(false, topic);
       }
+      if (success) lastContentType = 'wisdom';
     } else {
       const topic = getNextPhilosophicalTopic();
       console.log(`🎨 Posting DAILY IMAGE (philosophical): ${topic}`);
       success = await postWithImage(topic);
+           success = await postWithImage(topic);
       if (!success) {
         console.log("⚠️ Image post failed, trying text-only philosophical...");
         success = await postPhilosophicalInsight(topic);
       }
+      if (success) lastContentType = 'philosophical';
     }
 
   } else {
-    const roll = Math.random();
+    const contentOptions: Array<{
+      type: 'quote' | 'bio' | 'wisdom' | 'philosophical';
+      weight: number;
+    }> = [
+      { type: 'quote', weight: 0.25 },
+      { type: 'bio', weight: 0.50 },
+      { type: 'wisdom', weight: 0.125 },
+      { type: 'philosophical', weight: 0.125 }
+    ];
 
-    if (roll < 0.25) {
+    const allowedOptions = contentOptions.filter(option => option.type !== lastContentType);
+
+    const totalWeight = allowedOptions.reduce((sum, option) => sum + option.weight, 0);
+    let roll = Math.random() * totalWeight;
+    let selectedType: 'quote' | 'bio' | 'wisdom' | 'philosophical' = allowedOptions[0].type;
+
+    for (const option of allowedOptions) {
+      if (roll < option.weight) {
+        selectedType = option.type;
+        break;
+      }
+      roll -= option.weight;
+    }
+
+    if (selectedType === 'quote') {
       console.log(`🔮 Posting philosopher quote`);
       success = await postTextOnly(true);
-    } else if (roll < 0.75) {
+      if (success) lastContentType = 'quote';
+    } else if (selectedType === 'bio') {
       console.log(`📚 Posting philosopher biography`);
       success = await postPhilosopherBio();
+      if (success) lastContentType = 'bio';
+    } else if (selectedType === 'wisdom') {
+      const topic = getNextWisdomTopic();
+      console.log(`📘 Posting wisdom topic: ${topic}`);
+      success = await postTextOnly(false, topic);
+      if (success) lastContentType = 'wisdom';
     } else {
-      const useWisdomTopic = Math.random() < 0.5;
-
-      if (useWisdomTopic) {
-        const topic = getNextWisdomTopic();
-        console.log(`📘 Posting wisdom topic: ${topic}`);
-        success = await postTextOnly(false, topic);
-      } else {
-        const topic = getNextPhilosophicalTopic();
-        console.log(`🧠 Posting philosophical topic: ${topic}`);
-        success = await postPhilosophicalInsight(topic);
-      }
+      const topic = getNextPhilosophicalTopic();
+      console.log(`🧠 Posting philosophical topic: ${topic}`);
+      success = await postPhilosophicalInsight(topic);
+      if (success) lastContentType = 'philosophical';
     }
   }
 
@@ -819,6 +848,7 @@ Stats:
 - Instagram Posts: ${instagramPosts}
 - Philosopher Posts: ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY}
 - Philosopher Bio Posts: ${philosopherBioPosts}/${PHILOSOPHER_BIO_POSTS_PER_DAY}
+- Last Content Type: ${lastContentType ?? 'none'}
 - Unique Quotes: ${postedQuotes.size}
 - Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
 
