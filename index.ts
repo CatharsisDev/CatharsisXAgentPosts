@@ -107,6 +107,7 @@ let philosopherPosts = 0;
 let philosopherBioPosts = 0;
 let lastContentType: 'quote' | 'bio' | 'wisdom' | 'philosophical' | null = null;
 let postedQuotes: Set<string> = new Set();
+let postedBioPhilosophers: Set<string> = new Set();
 
 const STATE_FILE = '/app/data/poster_state.json';
 
@@ -129,7 +130,8 @@ function saveState() {
       philosopherPosts,
       philosopherBioPosts,
       lastContentType,
-      postedQuotes: Array.from(postedQuotes)
+      postedQuotes: Array.from(postedQuotes),
+      postedBioPhilosophers: Array.from(postedBioPhilosophers)
     }, null, 2));
     
     console.log('💾 State saved');
@@ -154,6 +156,7 @@ function loadState() {
       philosopherBioPosts = state.philosopherBioPosts || 0;
       lastContentType = state.lastContentType || null;
       postedQuotes = new Set(state.postedQuotes || []);
+      postedBioPhilosophers = new Set(state.postedBioPhilosophers || []);
       
       console.log('✅ State loaded:', {
         totalPosts,
@@ -165,7 +168,8 @@ function loadState() {
         philosopherPosts,
         philosopherBioPosts,
         lastContentType,
-        uniqueQuotes: postedQuotes.size
+        uniqueQuotes: postedQuotes.size,
+        uniqueBioPhilosophers: postedBioPhilosophers.size
       });
     }
   } catch (error) {
@@ -266,7 +270,13 @@ function toUnicodeBold(input: string): string {
 
 // Post a philosopher biography
 async function postPhilosopherBio(): Promise<boolean> {
-  const philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
+    if (postedBioPhilosophers.size >= PHILOSOPHERS.length) {
+    console.log("🔄 All philosophers have been used for bio posts. Resetting bio philosopher history.");
+    postedBioPhilosophers.clear();
+  }
+
+  const availablePhilosophers = PHILOSOPHERS.filter(name => !postedBioPhilosophers.has(name));
+  const philosopherName = availablePhilosophers[Math.floor(Math.random() * availablePhilosophers.length)];
   console.log(`📚 Creating BIO post about: ${philosopherName}`);
 
   const prompt = `Create a "Be like" post about ${philosopherName} in a punchy milestone list.
@@ -355,6 +365,7 @@ const bulletsOk = bulletLines.length >= 6 && bulletLines.every(l => l.trim().sta
     const result = await twitterClient.v2.tweet(tweetText);
     console.log("✅ Bio tweet posted! ID:", result.data.id);
 
+    postedBioPhilosophers.add(philosopherName);
     philosopherBioPosts++;
     totalPosts++;
     textPosts++;
@@ -848,6 +859,7 @@ Stats:
 - Instagram Posts: ${instagramPosts}
 - Philosopher Posts: ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY}
 - Philosopher Bio Posts: ${philosopherBioPosts}/${PHILOSOPHER_BIO_POSTS_PER_DAY}
+- Bio Philosophers Used: ${postedBioPhilosophers.size}/${PHILOSOPHERS.length}
 - Last Content Type: ${lastContentType ?? 'none'}
 - Unique Quotes: ${postedQuotes.size}
 - Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
