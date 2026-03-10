@@ -108,6 +108,7 @@ let philosopherBioPosts = 0;
 let lastContentType: 'quote' | 'bio' | 'wisdom' | 'philosophical' | null = null;
 let postedQuotes: Set<string> = new Set();
 let postedBioPhilosophers: Set<string> = new Set();
+let recentPostedContent: string[] = [];
 
 const STATE_FILE = '/app/data/poster_state.json';
 
@@ -131,7 +132,8 @@ function saveState() {
       philosopherBioPosts,
       lastContentType,
       postedQuotes: Array.from(postedQuotes),
-      postedBioPhilosophers: Array.from(postedBioPhilosophers)
+      postedBioPhilosophers: Array.from(postedBioPhilosophers),
+      recentPostedContent
     }, null, 2));
     
     console.log('💾 State saved');
@@ -157,6 +159,7 @@ function loadState() {
       lastContentType = state.lastContentType || null;
       postedQuotes = new Set(state.postedQuotes || []);
       postedBioPhilosophers = new Set(state.postedBioPhilosophers || []);
+      recentPostedContent = state.recentPostedContent || [];
       
       console.log('✅ State loaded:', {
         totalPosts,
@@ -169,7 +172,8 @@ function loadState() {
         philosopherBioPosts,
         lastContentType,
         uniqueQuotes: postedQuotes.size,
-        uniqueBioPhilosophers: postedBioPhilosophers.size
+        uniqueBioPhilosophers: postedBioPhilosophers.size,
+        recentPostedContentCount: recentPostedContent.length
       });
     }
   } catch (error) {
@@ -268,6 +272,80 @@ function toUnicodeBold(input: string): string {
   return out;
 }
 
+function normalizeGeneratedContent(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[“”"'’]/g, '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9\s]/g, '')
+    .trim();
+}
+
+function getTokenSet(text: string): Set<string> {
+  const stopwords = new Set([
+    'the', 'a', 'an', 'and', 'or', 'but', 'to', 'of', 'in', 'on', 'for', 'with', 'at', 'by',
+    'is', 'are', 'be', 'this', 'that', 'it', 'as', 'from', 'into', 'your', 'you', 'when', 'not'
+  ]);
+
+  return new Set(
+    normalizeGeneratedContent(text)
+      .split(' ')
+      .filter(token => token.length > 2 && !stopwords.has(token))
+  );
+}
+
+function contentTooSimilar(candidate: string, history: string[]): boolean {
+  const normalizedCandidate = normalizeGeneratedContent(candidate);
+  if (!normalizedCandidate) return true;
+
+  for (const previous of history) {
+    const normalizedPrevious = normalizeGeneratedContent(previous);
+    if (!normalizedPrevious) continue;
+
+    if (normalizedCandidate === normalizedPrevious) {
+      return true;
+    }
+
+    const candidateTokens = getTokenSet(candidate);
+    const previousTokens = getTokenSet(previous);
+
+    if (candidateTokens.size === 0 || previousTokens.size === 0) continue;
+
+    let intersection = 0;
+    for (const token of candidateTokens) {
+      if (previousTokens.has(token)) intersection++;
+    }
+
+    const union = new Set([...candidateTokens, ...previousTokens]).size;
+    const similarity = union > 0 ? intersection / union : 0;
+
+    if (similarity >= 0.65) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function getRecentContentGuidance(): string {
+  if (recentPostedContent.length === 0) return '';
+
+  const recentExamples = recentPostedContent
+    .slice(-5)
+    .map((item, index) => `${index + 1}. ${item}`)
+    .join('\n');
+
+  return `\n\nAvoid repeating or closely paraphrasing these recent posts:\n${recentExamples}`;
+}
+
+function rememberPostedContent(text: string): void {
+  recentPostedContent.push(text.trim());
+  if (recentPostedContent.length > 30) {
+    recentPostedContent = recentPostedContent.slice(-30);
+  }
+}
+
 // Post a philosopher biography
 async function postPhilosopherBio(): Promise<boolean> {
     if (postedBioPhilosophers.size >= PHILOSOPHERS.length) {
@@ -340,6 +418,13 @@ tweetText = lines.join('\n');
       continue;
     }
 
+        if (contentTooSimilar(tweetText, recentPostedContent.slice(-8))) {
+      console.log(`⚠️ Bio attempt ${attempt}: text too similar to recent posts, retrying...`);
+      if (attempt === 1) {
+        continue;
+      }
+    }
+
     const hasHeader = tweetText.startsWith(toUnicodeBold(`Be like ${philosopherName}.`));
     const hasDates =
       /\b\d{3,4}\b/.test(tweetText) ||               // 1724, 399, etc.
@@ -351,7 +436,7 @@ tweetText = lines.join('\n');
       const bulletLines = tweetText.split(/\r?\n/).slice(1).filter(l => l.trim().length > 0);
 const bulletsOk = bulletLines.length >= 6 && bulletLines.every(l => l.trim().startsWith('> '));// 1740-1746
 
-    if (!hasHeader || hasDates) {
+    if (!hasHeader || hasDates || !bulletsOk) {
       console.log(`⚠️ Bio attempt ${attempt}: invalid format (header=${hasHeader}, dates=${hasDates}, bullets=${bulletsOk}).`);
       if (attempt === 1) {
         console.log("🔁 Regenerating bio once...");
@@ -365,6 +450,7 @@ const bulletsOk = bulletLines.length >= 6 && bulletLines.every(l => l.trim().sta
     const result = await twitterClient.v2.tweet(tweetText);
     console.log("✅ Bio tweet posted! ID:", result.data.id);
 
+    rememberPostedContent(tweetText);
     postedBioPhilosophers.add(philosopherName);
     philosopherBioPosts++;
     totalPosts++;
@@ -474,6 +560,11 @@ Return ONLY the formatted result. No commentary. No explanations.`;
           continue;
         }
 
+        if (contentTooSimilar(tweetText, recentPostedContent.slice(-8))) {
+          console.log(`⚠️ Quote attempt ${attempt}: text too similar to recent posts, retrying...`);
+          continue;
+        }
+
         if (!isValidPhilosopherQuote(tweetText)) {
           console.log(`⚠️ Invalid quote on attempt ${attempt}, retrying...`);
           continue;
@@ -491,6 +582,7 @@ Return ONLY the formatted result. No commentary. No explanations.`;
         const result = await twitterClient.v2.tweet(tweetText);
         console.log("✅ Tweet posted! ID:", result.data.id);
 
+        rememberPostedContent(tweetText);
         postedQuotes.add(normalizedQuote);
         lastPostTime = Date.now();
         totalPosts++;
@@ -517,35 +609,46 @@ Return ONLY the formatted result. No commentary. No explanations.`;
     promptContent = `Write a tweet about: ${topic}. Practical advice, no hashtags. Stay under 500 characters.`;
     
     try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        max_completion_tokens: 150,
-        messages: [{
-          role: "user",
-          content: promptContent
-        }]
-      });
-      
-      let tweetText = response.choices[0].message.content?.trim() || '';
-      console.log(`📏 Text length: ${tweetText.length} chars`);
-      console.log("Generated text:", tweetText);
-      
-      if (!tweetText || tweetText.length < 10) {
-        console.log("❌ Failed to generate tweet text");
-        return false;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o",
+          max_completion_tokens: 150,
+          messages: [{
+            role: "user",
+            content: `${promptContent}${getRecentContentGuidance()}\n\nMake this meaningfully different in wording and angle from the recent posts above.`
+          }]
+        });
+
+        let tweetText = response.choices[0].message.content?.trim() || '';
+        console.log(`📏 Text length: ${tweetText.length} chars`);
+        console.log(`Generated text (attempt ${attempt}):`, tweetText);
+
+        if (!tweetText || tweetText.length < 10) {
+          console.log(`❌ Wisdom attempt ${attempt}: failed to generate tweet text`);
+          continue;
+        }
+
+        if (contentTooSimilar(tweetText, recentPostedContent.slice(-8))) {
+          console.log(`⚠️ Wisdom attempt ${attempt}: text too similar to recent posts, retrying...`);
+          continue;
+        }
+
+        tweetText = truncateTweet(tweetText);
+
+        const result = await twitterClient.v2.tweet(tweetText);
+        console.log("✅ Tweet posted! ID:", result.data.id);
+
+        rememberPostedContent(tweetText);
+        lastPostTime = Date.now();
+        totalPosts++;
+        textPosts++;
+        postsInCurrentCycle++;
+        saveState();
+        return true;
       }
 
-      tweetText = truncateTweet(tweetText);
-      
-      const result = await twitterClient.v2.tweet(tweetText);
-      console.log("✅ Tweet posted! ID:", result.data.id);
-      
-      lastPostTime = Date.now();
-      totalPosts++;
-      textPosts++;
-      postsInCurrentCycle++;
-      saveState();
-      return true;
+      console.log("❌ Wisdom post generation failed after 3 attempts");
+      return false;
     } catch (error: any) {
       console.error("❌ Twitter API error:", error.message);
       if (error.data) console.error("   → API response:", JSON.stringify(error.data));
@@ -577,21 +680,39 @@ Write a single detailed sentence describing this exact scene in watercolor style
     const imagePrompt = imagePromptResponse.choices[0].message.content?.trim() || 'peaceful watercolor interior scene with window light';
     console.log("Image prompt:", imagePrompt);
     
-    const tweetResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
-      max_completion_tokens: 100,
-      messages: [{
-        role: "user",
-        content: `Write a tweet about: ${topic}. Practical advice, no hashtags. Stay under 500 characters.`
-      }]
-    });
-    
-    let tweetText = tweetResponse.choices[0].message.content?.trim() || '';
-    console.log(`📏 Image tweet length: ${tweetText.length} chars`);
-    console.log("Generated text:", tweetText);
-    
-    if (!tweetText || tweetText.length < 10) {
-      console.log("❌ Failed to generate tweet text");
+    let tweetText = '';
+    let captionOk = false;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const tweetResponse = await openai.chat.completions.create({
+        model: "gpt-4o",
+        max_completion_tokens: 100,
+        messages: [{
+          role: "user",
+          content: `Write a tweet about: ${topic}. Practical advice, no hashtags. Stay under 500 characters.${getRecentContentGuidance()}\n\nMake this meaningfully different in wording and angle from the recent posts above.`
+        }]
+      });
+
+      tweetText = tweetResponse.choices[0].message.content?.trim() || '';
+      console.log(`📏 Image tweet length: ${tweetText.length} chars`);
+      console.log(`Generated image text (attempt ${attempt}):`, tweetText);
+
+      if (!tweetText || tweetText.length < 10) {
+        console.log(`❌ Image caption attempt ${attempt}: failed to generate tweet text`);
+        continue;
+      }
+
+      if (contentTooSimilar(tweetText, recentPostedContent.slice(-8))) {
+        console.log(`⚠️ Image caption attempt ${attempt}: text too similar to recent posts, retrying...`);
+        continue;
+      }
+
+      captionOk = true;
+      break;
+    }
+
+    if (!captionOk) {
+      console.log("❌ Failed to generate a sufficiently distinct image caption after 3 attempts");
       return false;
     }
 
@@ -629,6 +750,7 @@ Write a single detailed sentence describing this exact scene in watercolor style
     }
     
     console.log("✅ Twitter post successful!");
+    rememberPostedContent(tweetText);
     
     try {
       console.log("📸 Preparing Instagram post...");
@@ -714,32 +836,46 @@ Rules:
 Return only the tweet text.`;
 
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      max_completion_tokens: 150,
-      messages: [{ role: "user", content: promptContent }]
-    });
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        max_completion_tokens: 150,
+        messages: [{
+          role: "user",
+          content: `${promptContent}${getRecentContentGuidance()}\n\nMake this meaningfully different in wording and angle from the recent posts above.`
+        }]
+      });
 
-    let tweetText = response.choices[0].message.content?.trim() || '';
-    console.log(`📏 Philosophical tweet length: ${tweetText.length} chars`);
-    console.log("Generated text:", tweetText);
+      let tweetText = response.choices[0].message.content?.trim() || '';
+      console.log(`📏 Philosophical tweet length: ${tweetText.length} chars`);
+      console.log(`Generated philosophical text (attempt ${attempt}):`, tweetText);
 
-    if (!tweetText || tweetText.length < 10) {
-      console.log("❌ Failed to generate philosophical text");
-      return false;
+      if (!tweetText || tweetText.length < 10) {
+        console.log(`❌ Philosophical attempt ${attempt}: failed to generate text`);
+        continue;
+      }
+
+      if (contentTooSimilar(tweetText, recentPostedContent.slice(-8))) {
+        console.log(`⚠️ Philosophical attempt ${attempt}: text too similar to recent posts, retrying...`);
+        continue;
+      }
+
+      tweetText = truncateTweet(tweetText);
+
+      const result = await twitterClient.v2.tweet(tweetText);
+      console.log("✅ Philosophical tweet posted! ID:", result.data.id);
+
+      rememberPostedContent(tweetText);
+      lastPostTime = Date.now();
+      totalPosts++;
+      textPosts++;
+      postsInCurrentCycle++;
+      saveState();
+      return true;
     }
 
-    tweetText = truncateTweet(tweetText);
-
-    const result = await twitterClient.v2.tweet(tweetText);
-    console.log("✅ Philosophical tweet posted! ID:", result.data.id);
-
-    lastPostTime = Date.now();
-    totalPosts++;
-    textPosts++;
-    postsInCurrentCycle++;
-    saveState();
-    return true;
+    console.log("❌ Philosophical post generation failed after 3 attempts");
+    return false;
   } catch (error: any) {
     console.error("❌ Philosophical post error:", error.message);
     if (error.data) console.error("   → API response:", JSON.stringify(error.data));
@@ -768,7 +904,7 @@ async function attemptPost(): Promise<void> {
     if (useWisdomTopic) {
       const topic = getNextWisdomTopic();
       console.log(`🎨 Posting DAILY IMAGE (wisdom): ${topic}`);
-          success = await postWithImage(topic);
+      success = await postWithImage(topic);
       if (!success) {
         console.log("⚠️ Image post failed, trying text-only wisdom...");
         success = await postTextOnly(false, topic);
@@ -778,7 +914,6 @@ async function attemptPost(): Promise<void> {
       const topic = getNextPhilosophicalTopic();
       console.log(`🎨 Posting DAILY IMAGE (philosophical): ${topic}`);
       success = await postWithImage(topic);
-           success = await postWithImage(topic);
       if (!success) {
         console.log("⚠️ Image post failed, trying text-only philosophical...");
         success = await postPhilosophicalInsight(topic);
@@ -861,6 +996,7 @@ Stats:
 - Philosopher Bio Posts: ${philosopherBioPosts}/${PHILOSOPHER_BIO_POSTS_PER_DAY}
 - Bio Philosophers Used: ${postedBioPhilosophers.size}/${PHILOSOPHERS.length}
 - Last Content Type: ${lastContentType ?? 'none'}
+- Recent Content History: ${recentPostedContent.length}
 - Unique Quotes: ${postedQuotes.size}
 - Cycle: ${postsInCurrentCycle}/${POSTS_PER_CYCLE} posts, ${imagesInCurrentCycle}/${IMAGES_PER_CYCLE} images
 
