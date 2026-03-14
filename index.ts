@@ -22,13 +22,26 @@ const imageHostPlugin = new ImageHostPlugin({
 });
 
 // Configuration
-const POSTS_PER_DAY = 8;
-const POST_INTERVAL = (24 * 60 * 60 * 1000) / POSTS_PER_DAY;
-const POSTS_PER_CYCLE = 8;
+const WEEKLY_POST_SCHEDULE: Record<number, number> = {
+  0: 2, // Sunday
+  1: 4, // Monday
+  2: 3, // Tuesday
+  3: 5, // Wednesday
+  4: 3, // Thursday
+  5: 4, // Friday
+  6: 2  // Saturday
+};
+const MAX_POSTS_PER_DAY = 5;
+const POSTS_PER_CYCLE = MAX_POSTS_PER_DAY;
 const IMAGES_PER_CYCLE = 1;
 const INSTAGRAM_MAX_RETRIES = 2;
-const PHILOSOPHER_QUOTES_PER_DAY = 4;
+const PHILOSOPHER_QUOTES_PER_DAY = 2;
 const PHILOSOPHER_BIO_POSTS_PER_DAY = 1;
+
+// Per-day scheduling state
+let postsToday = 0;
+let currentDayKey = '';
+let nextScheduledPostAt = 0;
 
 // Consistent watercolor style
 const WATERCOLOR_STYLE = `Traditional watercolor painting with these exact characteristics:
@@ -118,7 +131,6 @@ function saveState() {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    
     fs.writeFileSync(STATE_FILE, JSON.stringify({
       postsInCurrentCycle,
       imagesInCurrentCycle,
@@ -133,9 +145,11 @@ function saveState() {
       lastContentType,
       postedQuotes: Array.from(postedQuotes),
       postedBioPhilosophers: Array.from(postedBioPhilosophers),
-      recentPostedContent
+      recentPostedContent,
+      postsToday,
+      currentDayKey,
+      nextScheduledPostAt,
     }, null, 2));
-    
     console.log('💾 State saved');
   } catch (error) {
     console.error('Error saving state:', error);
@@ -160,7 +174,9 @@ function loadState() {
       postedQuotes = new Set(state.postedQuotes || []);
       postedBioPhilosophers = new Set(state.postedBioPhilosophers || []);
       recentPostedContent = state.recentPostedContent || [];
-      
+      postsToday = state.postsToday || 0;
+      currentDayKey = state.currentDayKey || '';
+      nextScheduledPostAt = state.nextScheduledPostAt || 0;
       console.log('✅ State loaded:', {
         totalPosts,
         imagePosts,
@@ -173,7 +189,10 @@ function loadState() {
         lastContentType,
         uniqueQuotes: postedQuotes.size,
         uniqueBioPhilosophers: postedBioPhilosophers.size,
-        recentPostedContentCount: recentPostedContent.length
+        recentPostedContentCount: recentPostedContent.length,
+        postsToday,
+        currentDayKey,
+        nextScheduledPostAt,
       });
     }
   } catch (error) {
@@ -221,16 +240,75 @@ function getNextPhilosophicalTopic(): string {
   return topic;
 }
 
+// --- Scheduling helpers ---
+function getLocalDayKey(date: Date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function getScheduledPostsForToday(date: Date = new Date()): number {
+  const posts = WEEKLY_POST_SCHEDULE[date.getDay()] ?? 3;
+  return Math.min(posts, MAX_POSTS_PER_DAY);
+}
+
+function getRandomInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function getRemainingPostsToday(now: Date = new Date()): number {
+  const target = getScheduledPostsForToday(now);
+  return Math.max(0, target - postsToday);
+}
+
+function getTomorrowStart(now: Date = new Date()): Date {
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  return tomorrow;
+}
+
+function scheduleNextPostTime(now: Date = new Date()): number {
+  const remainingPosts = getRemainingPostsToday(now);
+  if (remainingPosts <= 0) {
+    return getTomorrowStart(now).getTime() + getRandomInt(45, 180) * 60 * 1000;
+  }
+
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 0, 0, 0);
+  const remainingWindow = Math.max(60 * 60 * 1000, endOfDay.getTime() - now.getTime());
+  const averageGap = Math.max(45 * 60 * 1000, Math.floor(remainingWindow / remainingPosts));
+  const jitter = Math.floor(averageGap * 0.35);
+  const minGap = Math.max(35 * 60 * 1000, averageGap - jitter);
+  const maxGap = averageGap + jitter;
+  return now.getTime() + getRandomInt(minGap, maxGap);
+}
+
+function ensureDailySchedule(now: Date = new Date()): void {
+  const todayKey = getLocalDayKey(now);
+  if (currentDayKey !== todayKey) {
+    currentDayKey = todayKey;
+    postsToday = 0;
+    postsInCurrentCycle = 0;
+    imagesInCurrentCycle = 0;
+    philosopherPosts = 0;
+    philosopherBioPosts = 0;
+    lastContentType = null;
+    nextScheduledPostAt = scheduleNextPostTime(now);
+    console.log(`📅 New day detected (${todayKey}). Target posts today: ${getScheduledPostsForToday(now)}`);
+    saveState();
+  }
+}
+
 function shouldPostWithImage(): boolean {
   if (postsInCurrentCycle >= POSTS_PER_CYCLE) {
     postsInCurrentCycle = 0;
     imagesInCurrentCycle = 0;
     philosopherPosts = 0;
     philosopherBioPosts = 0;
-    console.log("📊 New cycle started");
+    lastContentType = null;
+    console.log("📊 New content cycle started");
     saveState();
   }
-  
+
   let useImage = false;
   if (imagesInCurrentCycle < IMAGES_PER_CYCLE) {
     const postsRemaining = POSTS_PER_CYCLE - postsInCurrentCycle;
@@ -238,7 +316,7 @@ function shouldPostWithImage(): boolean {
     const chanceOfImage = imagesRemaining / postsRemaining;
     useImage = Math.random() <= chanceOfImage;
   }
-  
+
   return useImage;
 }
 
@@ -536,7 +614,7 @@ Format strictly as:
 
 "[quote text]"
 
-— ${philosopherName}
+🌿 ${philosopherName}
 
 Important: The entire response must be under 1000 characters total.
 Return ONLY the formatted result. No commentary. No explanations.`;
@@ -578,6 +656,9 @@ Return ONLY the formatted result. No commentary. No explanations.`;
 
         // Enforce limit before posting
         tweetText = truncateTweet(tweetText);
+
+        // Add author formatting with leaf emoji
+        tweetText = `${tweetText}\n\n🌿 ${philosopherName}`;
 
         const result = await twitterClient.v2.tweet(tweetText);
         console.log("✅ Tweet posted! ID:", result.data.id);
@@ -884,15 +965,31 @@ Return only the tweet text.`;
 }
 
 async function attemptPost(): Promise<void> {
-  const now = Date.now();
-  const timeSinceLastPost = now - lastPostTime;
-  
-  if (timeSinceLastPost < POST_INTERVAL) {
-    const minutesRemaining = Math.round((POST_INTERVAL - timeSinceLastPost) / 60000);
-    console.log(`⏰ Next post in ${minutesRemaining} minutes`);
+  const now = new Date();
+  ensureDailySchedule(now);
+
+  const todayTarget = getScheduledPostsForToday(now);
+  if (postsToday >= todayTarget) {
+    if (!nextScheduledPostAt || nextScheduledPostAt <= now.getTime()) {
+      nextScheduledPostAt = scheduleNextPostTime(now);
+      saveState();
+    }
+    const minutesRemaining = Math.max(1, Math.round((nextScheduledPostAt - now.getTime()) / 60000));
+    console.log(`📭 Daily quota reached (${postsToday}/${todayTarget}). Next scheduled window in ${minutesRemaining} minutes`);
     return;
   }
-  
+
+  if (!nextScheduledPostAt) {
+    nextScheduledPostAt = scheduleNextPostTime(now);
+    saveState();
+  }
+
+  if (now.getTime() < nextScheduledPostAt) {
+    const minutesRemaining = Math.max(1, Math.round((nextScheduledPostAt - now.getTime()) / 60000));
+    console.log(`⏰ Next irregular post window in ${minutesRemaining} minutes`);
+    return;
+  }
+
   console.log("📢 Time to post!");
   let success = false;
 
@@ -932,7 +1029,10 @@ async function attemptPost(): Promise<void> {
       { type: 'philosophical', weight: 0.125 }
     ];
 
-    const allowedOptions = contentOptions.filter(option => option.type !== lastContentType);
+    let allowedOptions = contentOptions.filter(option => option.type !== lastContentType);
+    if (allowedOptions.length === 0) {
+      allowedOptions = contentOptions;
+    }
 
     const totalWeight = allowedOptions.reduce((sum, option) => sum + option.weight, 0);
     let roll = Math.random() * totalWeight;
@@ -968,8 +1068,13 @@ async function attemptPost(): Promise<void> {
   }
 
   if (success) {
+    postsToday++;
+    nextScheduledPostAt = scheduleNextPostTime(new Date());
+    saveState();
     const imagePercentage = totalPosts > 0 ? (imagePosts / totalPosts * 100).toFixed(1) : '0.0';
+    const todayTargetAfterPost = getScheduledPostsForToday(new Date());
     console.log(`📊 Total: ${totalPosts} posts (${imagePosts} images [${imagePercentage}%], ${textPosts} text, ${instagramPosts} Instagram, ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY} philosopher, ${philosopherBioPosts}/${PHILOSOPHER_BIO_POSTS_PER_DAY} bio)`);
+    console.log(`📅 Today: ${postsToday}/${todayTargetAfterPost} posts completed`);
   }
 }
 
@@ -978,14 +1083,13 @@ const server = http.createServer((request, response) => {
   if (request.url === '/') {
     const imagePercentage = totalPosts > 0 ? (imagePosts / totalPosts * 100).toFixed(1) : '0.0';
     const minutesSincePost = Math.round((Date.now() - lastPostTime) / 60000);
-    const minutesUntilNext = Math.max(0, Math.round((POST_INTERVAL - (Date.now() - lastPostTime)) / 60000));
-    
     response.writeHead(200, {'Content-Type': 'text/plain'});
     response.end(`AIleen Poster Agent
 
 Status: Running
-Posts per day: ${POSTS_PER_DAY}
-Post interval: ${(POST_INTERVAL / 60000).toFixed(1)} minutes
+Daily target today: ${getScheduledPostsForToday(new Date())}
+Posts today: ${postsToday}
+Next irregular slot: ${nextScheduledPostAt ? Math.max(1, Math.round((nextScheduledPostAt - Date.now()) / 60000)) : 'n/a'} minutes
 
 Stats:
 - Total Posts: ${totalPosts}
@@ -1002,7 +1106,6 @@ Stats:
 
 Timing:
 - Last post: ${minutesSincePost} minutes ago
-- Next post: in ${minutesUntilNext} minutes
 `);
     return;
   }
@@ -1050,6 +1153,11 @@ Timing:
     postsInCurrentCycle = 0;
     imagesInCurrentCycle = 0;
     philosopherPosts = 0;
+    philosopherBioPosts = 0;
+    postsToday = 0;
+    currentDayKey = getLocalDayKey(new Date());
+    nextScheduledPostAt = scheduleNextPostTime(new Date());
+    lastContentType = null;
     saveState();
     response.writeHead(200, {'Content-Type': 'text/plain'});
     response.end('Cycle reset');
@@ -1087,8 +1195,9 @@ async function main(): Promise<void> {
   console.log("- INSTAGRAM_ACCESS_TOKEN:", !!process.env.INSTAGRAM_ACCESS_TOKEN ? "✅" : "❌");
   console.log("- INSTAGRAM_ACCOUNT_ID:", !!process.env.INSTAGRAM_ACCOUNT_ID ? "✅" : "❌");
   console.log("- IMGBB_API_KEY:", !!process.env.IMGBB_API_KEY ? "✅" : "❌");
-  console.log(`\n📊 Config: ${POSTS_PER_DAY} posts/day (every ${(POST_INTERVAL / 60000).toFixed(1)} minutes)`);
-  console.log(`📊 Cycle: ${IMAGES_PER_CYCLE} image per ${POSTS_PER_CYCLE} posts, ${PHILOSOPHER_QUOTES_PER_DAY} philosopher quotes\n`);
+  console.log(`\n📊 Config: irregular weekly schedule with max ${MAX_POSTS_PER_DAY} posts/day`);
+  console.log(`📊 Today target: ${getScheduledPostsForToday(new Date())} posts`);
+  console.log(`📊 Cycle: ${IMAGES_PER_CYCLE} image per ${POSTS_PER_CYCLE} posts, ${PHILOSOPHER_QUOTES_PER_DAY} philosopher quotes, ${PHILOSOPHER_BIO_POSTS_PER_DAY} bio\n`);
   
   try {
     console.log("Initializing agent...");
