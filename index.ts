@@ -108,6 +108,7 @@ const PHILOSOPHERS = [
   "Blaise Pascal"
 ];
 
+let virtualsAvailable = false;
 // State
 let postsInCurrentCycle = 0;
 let imagesInCurrentCycle = 0;
@@ -739,6 +740,10 @@ Return ONLY the formatted result. No commentary. No explanations.`;
 }
 
 async function postWithImage(topicOverride?: string): Promise<boolean> {
+  if (!virtualsAvailable) {
+    console.log("⚠️ Virtuals unavailable, skipping image post");
+    return false;
+  }
   const topic = topicOverride ?? getNextPhilosophicalTopic();
   console.log(`🖼️ Creating image post about: ${topic}`);
   
@@ -993,7 +998,7 @@ async function attemptPost(): Promise<void> {
   console.log("📢 Time to post!");
   let success = false;
 
-  const useImage = shouldPostWithImage();
+  const useImage = virtualsAvailable && shouldPostWithImage();
 
   if (useImage) {
     const useWisdomTopic = Math.random() < 0.5;
@@ -1092,6 +1097,7 @@ Posts today: ${postsToday}
 Next irregular slot: ${nextScheduledPostAt ? Math.max(1, Math.round((nextScheduledPostAt - Date.now()) / 60000)) : 'n/a'} minutes
 
 Stats:
+- Virtuals Available: ${virtualsAvailable ? 'yes' : 'no'}
 - Total Posts: ${totalPosts}
 - Image Posts: ${imagePosts} (${imagePercentage}%)
 - Text Posts: ${textPosts}
@@ -1202,10 +1208,13 @@ async function main(): Promise<void> {
   try {
     console.log("Initializing agent...");
     await wisdom_agent.init();
+    virtualsAvailable = true;
     console.log("✅ Agent initialized!");
   } catch (error) {
+    virtualsAvailable = false;
     console.error("❌ Failed to initialize agent:", error);
-    process.exit(1);
+    console.error("⚠️ Continuing in fallback mode without Virtuals");
+    console.log("📝 Running in text-only fallback mode");
   }
   
   const PORT = process.env.PORT || 3000;
