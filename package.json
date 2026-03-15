@@ -9,10 +9,10 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@virtuals-protocol/game": "^0.1.10",
+    "@virtuals-protocol/game": "^0.1.14",
     "@virtuals-protocol/game-imagegen-plugin": "^0.1.0",
     "@virtuals-protocol/game-twitter-node": "^0.1.4",
-    "@virtuals-protocol/game-twitter-plugin": "^0.1.8",
+    "@virtuals-protocol/game-twitter-plugin": "^0.1.11",
     "axios": "^1.8.4",
     "dotenv": "^16.3.1",
     "form-data": "^4.0.5",
