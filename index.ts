@@ -54,7 +54,10 @@ const WATERCOLOR_STYLE = `Traditional watercolor painting with these exact chara
 - Soft edges, atmospheric washes
 - Minimal but intentional details
 - Serene, contemplative mood
-- Overall impression: faded, gentle, low saturation`;
+- Overall impression: faded, gentle, low saturation
+- The image must be a finished standalone painting, not a concept sheet or mood board
+- Do not show color swatches, palette strips, paint samples, labels, annotations, captions, borders, layout guides, or any design presentation elements
+- Do not include any text, handwriting, signatures, watermarks, legends, or typographic elements anywhere in the image`;
 
 // Scene variations to rotate through
 const SCENE_TYPES = [
@@ -759,11 +762,12 @@ async function postWithImage(topicOverride?: string): Promise<boolean> {
 
 Scene to paint: ${sceneDescription}
 
-Write a single detailed sentence describing this exact scene in watercolor style. Focus on light, shadows, and the peaceful atmosphere.`
+Write a single detailed sentence describing this exact scene in watercolor style. Focus on light, shadows, and the peaceful atmosphere. The image must look like a finished painting only. Explicitly avoid any visible color palette, swatches, sample strips, labels, captions, poster layout, collage composition, mood-board styling, or text inside the artwork.`
       }]
     });
     
-    const imagePrompt = imagePromptResponse.choices[0].message.content?.trim() || 'peaceful watercolor interior scene with window light';
+    const rawImagePrompt = imagePromptResponse.choices[0].message.content?.trim() || 'peaceful watercolor interior scene with window light';
+    const imagePrompt = `${rawImagePrompt}. No text, no captions, no labels, no visible color palette, no swatches, no design board, no mood board, no poster layout, no collage.`;
     console.log("Image prompt:", imagePrompt);
     
     let tweetText = '';
