@@ -996,9 +996,17 @@ async function attemptPost(): Promise<void> {
   const useImage = shouldPostWithImage();
 
   if (useImage) {
-    const useWisdomTopic = Math.random() < 0.5;
+    let imageContentType: 'wisdom' | 'philosophical';
 
-    if (useWisdomTopic) {
+    if (lastContentType === 'wisdom') {
+      imageContentType = 'philosophical';
+    } else if (lastContentType === 'philosophical') {
+      imageContentType = 'wisdom';
+    } else {
+      imageContentType = Math.random() < 0.5 ? 'wisdom' : 'philosophical';
+    }
+
+    if (imageContentType === 'wisdom') {
       const topic = getNextWisdomTopic();
       console.log(`🎨 Posting DAILY IMAGE (wisdom): ${topic}`);
       success = await postWithImage(topic);
@@ -1031,6 +1039,7 @@ async function attemptPost(): Promise<void> {
 
     let allowedOptions = contentOptions.filter(option => option.type !== lastContentType);
     if (allowedOptions.length === 0) {
+      console.log("⚠️ No alternative content types available, using full option set");
       allowedOptions = contentOptions;
     }
 
@@ -1068,6 +1077,7 @@ async function attemptPost(): Promise<void> {
   }
 
   if (success) {
+    console.log(`✅ Posted content type: ${lastContentType}`);
     postsToday++;
     nextScheduledPostAt = scheduleNextPostTime(new Date());
     saveState();
