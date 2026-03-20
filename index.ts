@@ -86,29 +86,62 @@ const PHILOSOPHERS = [
   "Socrates",
   "Plato",
   "Aristotle",
+  "Heraclitus",
+  "Parmenides",
+  "Pythagoras",
+  "Epicurus",
+  "Zeno of Citium",
+  "Epictetus",
   "Marcus Aurelius",
   "Seneca",
-  "Epictetus",
+  "Plotinus",
+  "The Buddha",
+  "Nāgārjuna",
+  "Adi Shankara",
+  "Patañjali",
+  "Mahāvīra",
+  "Ramanuja",
+  "Kapila",
   "Confucius",
   "Laozi",
-  "Diogenes",
-  "Heraclitus",
-  "Zeno of Citium",
-  "Pythagoras",
-  "Plotinus",
-  "Hypatia",
-  "Simone Weil",
-  "Immanuel Kant",
-  "Friedrich Nietzsche",
+  "Zhuangzi",
+  "Mencius",
+  "Xunzi",
+  "Han Feizi",
+  "Avicenna",
+  "Averroes",
+  "Al-Farabi",
+  "Al-Ghazali",
+  "Ibn Khaldun",
+  "Augustine of Hippo",
+  "Thomas Aquinas",
+  "Anselm of Canterbury",
+  "René Descartes",
   "Baruch Spinoza",
+  "John Locke",
   "David Hume",
-  "John Stuart Mill",
-  "Hannah Arendt",
-  "Simone de Beauvoir",
+  "Gottfried Wilhelm Leibniz",
+  "Immanuel Kant",
+  "G. W. F. Hegel",
+  "Arthur Schopenhauer",
+  "Søren Kierkegaard",
+  "Karl Marx",
+  "Friedrich Nietzsche",
+  "Edmund Husserl",
+  "Martin Heidegger",
   "Ludwig Wittgenstein",
   "Jean-Paul Sartre",
+  "Simone de Beauvoir",
+  "Michel Foucault",
+  "Hannah Arendt",
   "Albert Camus",
-  "Blaise Pascal"
+  "Simone Weil",
+  "Blaise Pascal",
+  "John Stuart Mill",
+  "Hypatia",
+  "Diogenes",
+  "Nishida Kitarō",
+  "Sri Aurobindo"
 ];
 
 let virtualsAvailable = false;
@@ -122,6 +155,7 @@ let textPosts = 0;
 let instagramPosts = 0;
 let philosopherPosts = 0;
 let philosopherBioPosts = 0;
+let lastQuotePhilosopher: string | null = null;
 let lastContentType: 'quote' | 'bio' | 'wisdom' | 'philosophical' | null = null;
 let postedQuotes: Set<string> = new Set();
 let postedBioPhilosophers: Set<string> = new Set();
@@ -146,6 +180,7 @@ function saveState() {
       currentSceneIndex,
       philosopherPosts,
       philosopherBioPosts,
+      lastQuotePhilosopher,
       lastContentType,
       postedQuotes: Array.from(postedQuotes),
       postedBioPhilosophers: Array.from(postedBioPhilosophers),
@@ -174,6 +209,7 @@ function loadState() {
       currentSceneIndex = state.currentSceneIndex || 0;
       philosopherPosts = state.philosopherPosts || 0;
       philosopherBioPosts = state.philosopherBioPosts || 0;
+      lastQuotePhilosopher = state.lastQuotePhilosopher || null;
       lastContentType = state.lastContentType || null;
       postedQuotes = new Set(state.postedQuotes || []);
       postedBioPhilosophers = new Set(state.postedBioPhilosophers || []);
@@ -190,6 +226,7 @@ function loadState() {
         imagesInCycle: imagesInCurrentCycle,
         philosopherPosts,
         philosopherBioPosts,
+        lastQuotePhilosopher,
         lastContentType,
         uniqueQuotes: postedQuotes.size,
         uniqueBioPhilosophers: postedBioPhilosophers.size,
@@ -439,6 +476,11 @@ async function postPhilosopherBio(): Promise<boolean> {
   const philosopherName = availablePhilosophers[Math.floor(Math.random() * availablePhilosophers.length)];
   console.log(`📚 Creating BIO post about: ${philosopherName}`);
 
+  if (lastContentType === 'bio' && recentPostedContent.some(c => c.includes(philosopherName))) {
+    console.log(`⚠️ Skipping duplicate recent bio philosopher: ${philosopherName}`);
+    return false;
+  }
+
   const prompt = `Create a "Be like" post about ${philosopherName} in a punchy milestone list.
 
 Output format (strict):
@@ -466,6 +508,11 @@ try {
     });
 
     let tweetText = response.choices[0].message.content?.trim() || "";
+
+    if (recentPostedContent.some(c => c.includes(philosopherName))) {
+      console.log(`⚠️ Bio attempt ${attempt}: philosopher recently used, retrying...`);
+      continue;
+    }
 
     // Enforce formatting: bold header + > bullets
 const lines = tweetText
@@ -580,9 +627,9 @@ function isValidPhilosopherQuote(text: string): boolean {
     console.log('❌ Invalid quote: missing quotation marks');
     return false;
   }
-  
-  if (!text.includes('—') && !text.includes(' - ')) {
-    console.log('❌ Invalid quote: missing attribution');
+
+  if (!text.includes('🌿')) {
+    console.log('❌ Invalid quote: missing attribution with 🌿');
     return false;
   }
   
@@ -605,7 +652,9 @@ async function postTextOnly(isPhilosopherQuote: boolean = false, topicOverride?:
   
   if (isPhilosopher) {
     for (let attempt = 1; attempt <= 3; attempt++) {
-      philosopherName = PHILOSOPHERS[Math.floor(Math.random() * PHILOSOPHERS.length)];
+      const availableQuotePhilosophers = PHILOSOPHERS.filter(name => name !== lastQuotePhilosopher);
+      const quotePool = availableQuotePhilosophers.length > 0 ? availableQuotePhilosophers : PHILOSOPHERS;
+      philosopherName = quotePool[Math.floor(Math.random() * quotePool.length)];
       console.log(`📝 Creating PHILOSOPHER QUOTE post (${philosopherPosts + 1}/${PHILOSOPHER_QUOTES_PER_DAY}) from: ${philosopherName} (attempt ${attempt}/3)`);
 
       promptContent = `Output one short modern framing sentence (max 12 words) that connects the quote to a present-day personal growth struggle.
@@ -620,7 +669,11 @@ Format strictly as:
 
 🌿 ${philosopherName}
 
-Important: The entire response must be under 1000 characters total.
+Important:
+- Use 🌿 instead of any dash for attribution
+- Do NOT include any dashes (— or -)
+- The entire response must be under 1000 characters total.
+
 Return ONLY the formatted result. No commentary. No explanations.`;
 
       try {
@@ -661,14 +714,12 @@ Return ONLY the formatted result. No commentary. No explanations.`;
         // Enforce limit before posting
         tweetText = truncateTweet(tweetText);
 
-        // Add author formatting with leaf emoji
-        tweetText = `${tweetText}\n\n🌿 ${philosopherName}`;
-
         const result = await twitterClient.v2.tweet(tweetText);
         console.log("✅ Tweet posted! ID:", result.data.id);
 
         rememberPostedContent(tweetText);
         postedQuotes.add(normalizedQuote);
+        lastQuotePhilosopher = philosopherName;
         lastPostTime = Date.now();
         totalPosts++;
         textPosts++;
@@ -742,6 +793,7 @@ Return ONLY the formatted result. No commentary. No explanations.`;
   }
 }
 
+/*
 async function postWithImage(topicOverride?: string): Promise<boolean> {
   if (!virtualsAvailable) {
     console.log("⚠️ Virtuals unavailable, skipping image post");
@@ -909,6 +961,7 @@ Write a single detailed sentence describing this exact scene in watercolor style
     return false;
   }
 }
+*/
 
 async function postPhilosophicalInsight(topicOverride?: string): Promise<boolean> {
   const topic = topicOverride ?? getNextPhilosophicalTopic();
@@ -1002,39 +1055,58 @@ async function attemptPost(): Promise<void> {
   console.log("📢 Time to post!");
   let success = false;
 
-  const useImage = virtualsAvailable && shouldPostWithImage();
+  const useImage = false; // temporarily disabled image posting
 
   if (useImage) {
-    let imageContentType: 'wisdom' | 'philosophical';
+    console.log("🖼️ Image posting is currently disabled, falling back to text-only flow");
 
-    if (lastContentType === 'wisdom') {
-      imageContentType = 'philosophical';
-    } else if (lastContentType === 'philosophical') {
-      imageContentType = 'wisdom';
-    } else {
-      imageContentType = Math.random() < 0.5 ? 'wisdom' : 'philosophical';
+    const contentOptions: Array<{
+      type: 'quote' | 'bio' | 'wisdom' | 'philosophical';
+      weight: number;
+    }> = [
+      { type: 'quote', weight: 0.25 },
+      { type: 'bio', weight: 0.50 },
+      { type: 'wisdom', weight: 0.125 },
+      { type: 'philosophical', weight: 0.125 }
+    ];
+
+    let allowedOptions = contentOptions.filter(option => option.type !== lastContentType);
+    if (allowedOptions.length === 0) {
+      console.log("⚠️ No alternative content types available, using full option set");
+      allowedOptions = contentOptions;
     }
 
-    if (imageContentType === 'wisdom') {
-      const topic = getNextWisdomTopic();
-      console.log(`🎨 Posting DAILY IMAGE (wisdom): ${topic}`);
-      success = await postWithImage(topic);
-      if (!success) {
-        console.log("⚠️ Image post failed, trying text-only wisdom...");
-        success = await postTextOnly(false, topic);
+    const totalWeight = allowedOptions.reduce((sum, option) => sum + option.weight, 0);
+    let roll = Math.random() * totalWeight;
+    let selectedType: 'quote' | 'bio' | 'wisdom' | 'philosophical' = allowedOptions[0].type;
+
+    for (const option of allowedOptions) {
+      if (roll < option.weight) {
+        selectedType = option.type;
+        break;
       }
+      roll -= option.weight;
+    }
+
+    if (selectedType === 'quote') {
+      console.log(`🔮 Posting philosopher quote`);
+      success = await postTextOnly(true);
+      if (success) lastContentType = 'quote';
+    } else if (selectedType === 'bio') {
+      console.log(`📚 Posting philosopher biography`);
+      success = await postPhilosopherBio();
+      if (success) lastContentType = 'bio';
+    } else if (selectedType === 'wisdom') {
+      const topic = getNextWisdomTopic();
+      console.log(`📘 Posting wisdom topic: ${topic}`);
+      success = await postTextOnly(false, topic);
       if (success) lastContentType = 'wisdom';
     } else {
       const topic = getNextPhilosophicalTopic();
-      console.log(`🎨 Posting DAILY IMAGE (philosophical): ${topic}`);
-      success = await postWithImage(topic);
-      if (!success) {
-        console.log("⚠️ Image post failed, trying text-only philosophical...");
-        success = await postPhilosophicalInsight(topic);
-      }
+      console.log(`🧠 Posting philosophical topic: ${topic}`);
+      success = await postPhilosophicalInsight(topic);
       if (success) lastContentType = 'philosophical';
     }
-
   } else {
     const contentOptions: Array<{
       type: 'quote' | 'bio' | 'wisdom' | 'philosophical';
@@ -1117,6 +1189,8 @@ Stats:
 - Text Posts: ${textPosts}
 - Instagram Posts: ${instagramPosts}
 - Philosopher Posts: ${philosopherPosts}/${PHILOSOPHER_QUOTES_PER_DAY}
+- Last Quote Philosopher: ${lastQuotePhilosopher ?? 'none'}
+- Available Philosophers: ${PHILOSOPHERS.length}
 - Philosopher Bio Posts: ${philosopherBioPosts}/${PHILOSOPHER_BIO_POSTS_PER_DAY}
 - Bio Philosophers Used: ${postedBioPhilosophers.size}/${PHILOSOPHERS.length}
 - Last Content Type: ${lastContentType ?? 'none'}
@@ -1142,12 +1216,11 @@ Timing:
       });
     return;
   }
-  
-  if (request.url === '/post-image') {
-    postWithImage()
+  if (request.url === '/post-quote') {
+    postTextOnly(true)
       .then(success => {
         response.writeHead(success ? 200 : 500, {'Content-Type': 'text/plain'});
-        response.end(success ? 'Image post successful' : 'Image post failed');
+        response.end(success ? 'Quote post successful' : 'Quote post failed');
       })
       .catch(err => {
         response.writeHead(500, {'Content-Type': 'text/plain'});
@@ -1155,6 +1228,19 @@ Timing:
       });
     return;
   }
+  
+  // if (request.url === '/post-image') {
+  //   postWithImage()
+  //     .then(success => {
+  //       response.writeHead(success ? 200 : 500, {'Content-Type': 'text/plain'});
+  //       response.end(success ? 'Image post successful' : 'Image post failed');
+  //     })
+  //     .catch(err => {
+  //       response.writeHead(500, {'Content-Type': 'text/plain'});
+  //       response.end('Error: ' + err.message);
+  //     });
+  //   return;
+  // }
 
   if (request.url === '/post-bio') {
     postPhilosopherBio()
@@ -1168,7 +1254,7 @@ Timing:
       });
     return;
   }
-  
+
   if (request.url === '/reset') {
     postsInCurrentCycle = 0;
     imagesInCurrentCycle = 0;
